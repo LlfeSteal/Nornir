@@ -17,6 +17,21 @@ test.describe('Gantt (mocked API)', () => {
     // Everything starts collapsed: no child row is rendered.
     await expect(page.getByTitle('Shared issue')).toHaveCount(0);
     await expect(page.getByTitle('Standalone issue')).toHaveCount(0);
+    await expect(page.getByTitle('Deep issue')).toHaveCount(0);
+  });
+
+  test('a nested epic is also listed at the top level', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/');
+
+    // Only the top-level copy is visible while its parent is collapsed.
+    await expect(page.getByTitle('Child epic')).toHaveCount(1);
+    await page.getByTitle('Child epic').locator('..').getByText('▶').click();
+    await expect(page.getByTitle('Deep issue')).toHaveCount(1);
+
+    // Expanding the parent shows the nested epic in its hierarchy too.
+    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await expect(page.getByTitle('Child epic')).toHaveCount(2);
   });
 
   test('expanding and collapsing a group shows and hides its children', async ({ page }) => {

@@ -41,6 +41,8 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 
 ## Usage
 
+- Milestones list the work items whose milestone has the same title (milestones with the same title in several projects make one row).
+- Every epic is also listed at the top level, on top of its place under its parent epic.
 - Everything starts collapsed; the triangles expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
 - Day / Week / Month views.
 - Double-click a bar to open the item in GitLab.

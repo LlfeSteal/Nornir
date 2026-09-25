@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"nornir/internal/model"
@@ -14,9 +15,12 @@ const (
 	typenameMilestone = "WorkItemWidgetMilestone"
 	typenameHierarchy = "WorkItemWidgetHierarchy"
 
-	// milestoneCopySuffix marks the copy placed under a milestone of an item
-	// already shown under its parent epic (IDs must be unique in the UI).
-	milestoneCopySuffix = "_ms"
+	// Suffixes of the extra copies of an item, followed by the ID tail of the item the
+	// copied subtree is rooted at, so every ID stays unique in the UI:
+	//   <id>_ms_<root>   copy under a milestone of an item also shown under its parent;
+	//   <id>_root_<root> top-level copy of an epic that also sits under a parent or a milestone.
+	milestoneCopySuffix = "_ms_"
+	rootCopySuffix      = "_root_"
 )
 
 // parsedItem is a normalized work item, without its children.
@@ -24,7 +28,7 @@ type parsedItem struct {
 	task              model.GanttTask
 	closed            bool
 	hierarchyParentID string
-	milestoneID       string
+	milestoneKey      string // see milestoneKey()
 }
 
 // BuildGanttTree builds the Gantt tree in two phases:
@@ -33,12 +37,15 @@ type parsedItem struct {
 //
 // Attachment rules:
 //   - hierarchy parent present in the dataset → under that parent (ID unchanged);
-//   - milestone → under the milestone, ID (and subtree) suffixed `_ms` if the item
-//     is also placed under a hierarchy parent;
-//   - neither → root.
+//   - milestone → under the milestone whose title matches; the copy (and its subtree)
+//     gets the `_ms_<id>` suffix if the item is also placed under a hierarchy parent;
+//   - neither → root;
+//   - every epic that is not already a root also gets a top-level copy (`_root_<id>`).
 //
-// All groupMilestones are shown, even with no attached item; milestones found only
-// through widgets (e.g. inherited from a parent group) are added to them.
+// Milestones are matched by title: milestones sharing a title (e.g. the same sprint in
+// several projects) make a single row. All groupMilestones are shown, even with no
+// attached item; milestones found only through widgets (e.g. inherited from a parent
+// group) are added to them.
 func BuildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone) []model.GanttTask {
 	return buildGanttTree(nodes, groupMilestones, time.Now())
 }
@@ -53,11 +60,12 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		if ms == nil || ms.ID == "" {
 			return
 		}
-		if _, exists := milestones[ms.ID]; exists {
+		key := milestoneKey(ms)
+		if _, exists := milestones[key]; exists {
 			return
 		}
 		msStart := fallbackDate(ms.StartDate, now, 0)
-		milestones[ms.ID] = &model.GanttTask{
+		milestones[key] = &model.GanttTask{
 			ID:     ms.ID,
 			Name:   "[Milestone] " + ms.Title,
 			Type:   model.TypeMilestone,
@@ -65,7 +73,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			End:    ensureEndAfterStart(msStart, fallbackDate(ms.DueDate, now, 30)),
 			WebURL: ms.WebURL,
 		}
-		milestoneOrder = append(milestoneOrder, ms.ID)
+		milestoneOrder = append(milestoneOrder, key)
 	}
 	for i := range groupMilestones {
 		addMilestone(&groupMilestones[i])
@@ -91,7 +99,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		}
 
 		if ms := extractMilestoneWidget(node.Widgets); ms != nil {
-			item.milestoneID = ms.ID
+			item.milestoneKey = milestoneKey(ms)
 			addMilestone(ms)
 		}
 
@@ -117,10 +125,10 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		if !hasHierarchyParent {
 			item.hierarchyParentID = ""
 		}
-		if item.milestoneID != "" {
-			milestoneChildren[item.milestoneID] = append(milestoneChildren[item.milestoneID], id)
+		if item.milestoneKey != "" {
+			milestoneChildren[item.milestoneKey] = append(milestoneChildren[item.milestoneKey], id)
 		}
-		if !hasHierarchyParent && item.milestoneID == "" {
+		if !hasHierarchyParent && item.milestoneKey == "" {
 			roots = append(roots, id)
 		}
 	}
@@ -154,22 +162,65 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 	})
 
 	result := make([]model.GanttTask, 0, len(milestoneOrder)+len(roots))
-	for _, msID := range milestoneOrder {
-		ms := *milestones[msID]
-		for _, childID := range milestoneChildren[msID] {
+	// canonical lists, in display order, the items placed without suffix and not under a
+	// parent (milestone children without parent, then roots): the starting points of the
+	// depth-first walk that orders the epic root copies.
+	canonical := make([]string, 0)
+	for _, key := range milestoneOrder {
+		ms := *milestones[key]
+		for _, childID := range milestoneChildren[key] {
 			suffix := ""
 			if items[childID].hierarchyParentID != "" {
-				suffix = milestoneCopySuffix
+				suffix = milestoneCopySuffix + lastSegment(childID)
+			} else {
+				canonical = append(canonical, childID)
 			}
 			ms.Children = append(ms.Children, materialize(childID, suffix, map[string]bool{}))
 		}
 		ms.Progress = computeProgress(false, ms.Children)
 		result = append(result, ms)
 	}
+	isRoot := make(map[string]bool, len(roots))
 	for _, id := range roots {
+		isRoot[id] = true
+		canonical = append(canonical, id)
 		result = append(result, materialize(id, "", map[string]bool{}))
 	}
+
+	// Every epic that is not already a root is also listed at the top level.
+	seen := make(map[string]bool)
+	var collectEpics func(id string)
+	collectEpics = func(id string) {
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		if items[id].task.Type == model.TypeEpic && !isRoot[id] {
+			result = append(result, materialize(id, rootCopySuffix+lastSegment(id), map[string]bool{}))
+		}
+		for _, childID := range hierarchyChildren[id] {
+			collectEpics(childID)
+		}
+	}
+	for _, id := range canonical {
+		collectEpics(id)
+	}
 	return result
+}
+
+// milestoneKey identifies a milestone by its title (see BuildGanttTree), or by its ID
+// when it has no title.
+func milestoneKey(ms *Milestone) string {
+	if title := strings.TrimSpace(ms.Title); title != "" {
+		return "title:" + title
+	}
+	return "id:" + ms.ID
+}
+
+// lastSegment returns the numeric tail of a GitLab global ID
+// ("gid://gitlab/WorkItem/42" → "42"), or the ID itself when it has no "/".
+func lastSegment(id string) string {
+	return id[strings.LastIndex(id, "/")+1:]
 }
 
 // computeProgress: mean of the children if any, otherwise 0/100 depending on state.

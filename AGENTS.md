@@ -90,12 +90,13 @@ docker compose down
 Covered by `tree_builder_test.go` — any behavior change must come with a test.
 
 1. **Two phases**: index nodes and child lists, then materialize recursively. Don't go back to copying structs on the fly (grandchildren used to get lost).
-2. **Dual attachment**: an item with both a hierarchy parent **and** a milestone appears under both. The copy under the milestone, **and its whole subtree**, gets the `_ms` suffix so IDs stay unique in the UI.
+2. **Multiple placements, unique IDs**: an item can be shown several times. Its canonical placement (under its hierarchy parent, or as a root, or under its milestone when it has no parent) keeps the GitLab ID. Every extra copy, **and its whole subtree**, gets a suffix naming the placement and the item the copy is rooted at (`lastSegment` of its GID): `_ms_<id>` for the copy under a milestone, `_root_<id>` for the top-level copy of an epic. IDs must stay unique across the whole tree (the UI requires it; tests check it through `mustBuild`) and deterministic (the UI keys its expanded state on them).
 3. A hierarchy parent **missing** from the data doesn't count: the item becomes a root (or goes only under its milestone, without suffix).
-4. **Deterministic order**: milestones sorted by start date then title, then roots in API order. Never iterate over a map to produce output.
+4. **Deterministic order**: milestones sorted by start date then title, then roots in API order, then the epic top-level copies in depth-first order of the canonical tree. Never iterate over a map to produce output.
 5. **Progress**: closed item = 100, open = 0; a parent = mean of its children.
 6. **Fallback dates**: no dates → today → +14 d; due date only → due −14 d; start only → start +14 d; milestone without dates → today → +30 d. Always `end > start` (otherwise `start + 1 d`).
-7. Group milestones (`FetchGroupMilestones`) are shown **even when empty**; milestones found through widgets (e.g. inherited from a parent group) are added without duplicates.
+7. **Milestones are matched by title** (`milestoneKey`): a milestone's children are the work items (epics or issues) whose `milestone { title }` equals its title, each with its subtree. Milestones sharing a title (group and projects) make one row, which keeps the ID, dates and URL of the first one registered — group milestones (`FetchGroupMilestones`) are registered first and shown **even when empty**; milestones found only through widgets (e.g. inherited from a parent group) are added after them.
+8. **Every epic is also listed at the top level**: an epic that isn't already a root (it has a parent, or sits only under a milestone) gets a `_root_<id>` copy at the top level, with its subtree. Only epics are copied, not issues.
 
 ## Security
 
