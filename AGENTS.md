@@ -1,0 +1,165 @@
+# AGENTS.md — Nornir
+
+Reference for any agent (or human) working in this repository. Read it fully before changing code, and **keep it up to date** (see "Working rules").
+
+## The project
+
+**Nornir** shows the Gantt chart of **one** GitLab group: its epics, milestones and issues/tasks (including those of the group's projects).
+
+- **Backend**: Go 1.21+ / Gin. Queries the GitLab GraphQL API, builds a tree, caches it in memory for 5 min (go-cache).
+- **Frontend**: React 18 + TypeScript + Vite, rendered with `gantt-task-react`, HTTP via axios.
+- **Deployment**: `docker compose` — Go backend (alpine image) + nginx serving the SPA and proxying `/api/` to the backend.
+
+## Layout
+
+```
+backend/
+  cmd/server/main.go                config (env), Gin routes, cache, /api/gantt handler
+  internal/gitlab/client.go         paginated GraphQL queries (work items, milestones), error handling
+  internal/gitlab/structs.go        GraphQL deserialization structs
+  internal/gitlab/tree_builder.go   tree-building algorithm (core business logic)
+  internal/gitlab/tree_builder_test.go
+  internal/model/gantt.go           GanttTask pivot model (JSON sent to the frontend)
+frontend/
+  src/App.tsx                       page: title + group, Refresh button, loading/error states
+  src/api/gantt.ts                  fetchConfig, fetchGantt, errorMessage
+  src/components/GanttChart.tsx     adapter to gantt-task-react, view modes, collapsing
+  src/utils/flatten.ts              tree flattening (parent before children)
+  src/types/gantt.ts                TypeScript model (mirror of internal/model)
+  e2e/                              Playwright tests (config in frontend/playwright.config.ts)
+  nginx.conf, Dockerfile
+docker-compose.yml                  compose project "nornir" (nornir-backend, nornir-frontend)
+.env / .env.example                 configuration (.env is never committed)
+.devcontainer/                      Go 1.22 image + node + docker-in-docker
+README.md                           user-facing documentation
+CLAUDE.md                           just imports this file
+```
+
+## Commands
+
+```bash
+# Backend
+cd backend && go vet ./... && go test ./...
+# godotenv only reads .env from the current directory: export the root one before go run
+cd backend && (set -a; . ../.env; set +a; go run ./cmd/server)
+
+# Frontend
+cd frontend && npm run build                # tsc + vite build
+cd frontend && npm run dev                  # http://localhost:5173, proxies /api → localhost:8080
+
+# End-to-end tests (Playwright)
+cd frontend && npm run test:e2e:mocked      # mocked API, no GitLab needed
+cd frontend && npm run test:e2e             # everything, including @live (real GitLab through the docker stack)
+npx playwright install --with-deps chromium # once per container, if Chromium is missing
+
+# Full stack
+docker compose up -d --build                # http://localhost
+docker compose down
+```
+
+## Configuration (`.env`)
+
+| Variable | Purpose |
+|---|---|
+| `GITLAB_URL` | GitLab instance (default `https://gitlab.com`) |
+| `GITLAB_GROUP` | **Required.** Full path of the displayed group (e.g. `my-org/my-group`). The backend refuses to start without it. |
+| `GITLAB_TOKEN` | GitLab token, `read_api` scope. Used when the request carries no `Authorization` header. |
+| `PORT` | Backend port (default 8080) |
+
+- **Never print or commit the token.** `.env` is in `.gitignore`.
+- After editing `.env`: `docker compose up -d --force-recreate backend` then `docker compose up -d` (recreating the backend can leave `nornir-frontend` in the `Created` state).
+
+## Backend API
+
+- `GET /api/health` → `{"status":"ok"}`
+- `GET /api/config` → `{"group", "gitlabUrl"}` (never the token)
+- `GET /api/gantt` → `GanttTask[]` tree of the configured group. `?refresh=1` bypasses the cache. Header `X-Cache: HIT|MISS`. Errors: 401 (token), 404 (group not found), 502 (other GitLab error), body `{"error": "..."}`.
+
+## GitLab GraphQL pitfalls (learned the hard way)
+
+- Widgets are identified by **`__typename`** (`WorkItemWidgetHierarchy`, `WorkItemWidgetMilestone`, `WorkItemWidgetStartAndDueDate`). The `type` field returns an enum value (`HIERARCHY`…): don't use it to discriminate.
+- The **`Milestone` type has no `webUrl`**, only `webPath`: the absolute URL is rebuilt by `absoluteURL` in `client.go`.
+- `group.workItems` needs **`includeDescendants: true`** to include issues from the group's projects.
+- Pagination: `afterCursor` must be **`null`** (not `""`) on the first page.
+- GraphQL errors come back as HTTP 200 with `errors[]`: they are surfaced as-is.
+- **Any query change must be validated against the real GitLab** (the `@live` test, or a `curl` to `https://gitlab.com/api/graphql` with a public group such as `gitlab-org`). A local mock once accepted a field that doesn't exist.
+- Many items have no dates (`startDate`/`dueDate` are `null`): that's expected, see fallback dates below.
+
+## `tree_builder.go` invariants
+
+Covered by `tree_builder_test.go` — any behavior change must come with a test.
+
+1. **Two phases**: index nodes and child lists, then materialize recursively. Don't go back to copying structs on the fly (grandchildren used to get lost).
+2. **Dual attachment**: an item with both a hierarchy parent **and** a milestone appears under both. The copy under the milestone, **and its whole subtree**, gets the `_ms` suffix so IDs stay unique in the UI.
+3. A hierarchy parent **missing** from the data doesn't count: the item becomes a root (or goes only under its milestone, without suffix).
+4. **Deterministic order**: milestones sorted by start date then title, then roots in API order. Never iterate over a map to produce output.
+5. **Progress**: closed item = 100, open = 0; a parent = mean of its children.
+6. **Fallback dates**: no dates → today → +14 d; due date only → due −14 d; start only → start +14 d; milestone without dates → today → +30 d. Always `end > start` (otherwise `start + 1 d`).
+7. Group milestones (`FetchGroupMilestones`) are shown **even when empty**; milestones found through widgets (e.g. inherited from a parent group) are added without duplicates.
+
+## Security
+
+- The cache key includes a token fingerprint (`tokenFingerprint` in `main.go`). **Never key the cache on the group alone**: a tree fetched with one user's permissions would be served to another.
+
+## Frontend
+
+- `flattenGanttTree` yields a list where each parent precedes its children: `gantt-task-react` requires it.
+- Any item with children (and every milestone) is a collapsible `project`; leaves are `task`s. Collapsing is held in `GanttChart`'s `collapsed` state.
+- `YYYY-MM-DD` dates are parsed in **local** time (`parseDay`), not with `new Date(iso)` (UTC).
+- Double-clicking a bar opens the item in GitLab.
+
+## Tests
+
+- **Go**: unit tests in `backend/internal/gitlab` (`buildGanttTree` takes an injected `now` to stay deterministic).
+- **Playwright**: in `frontend/e2e/` — **every new Playwright test is saved in the project**, never thrown away.
+  - `*.mocked.spec.ts`: API mocked with `page.route`, datasets in `e2e/fixtures.ts` (`mockApi`).
+  - `*.live.spec.ts`: tagged `@live`, real backend + real GitLab; assumes nothing about the group's content.
+  - Default target: the docker stack (`http://localhost`), override with `BASE_URL`.
+
+## Development environment
+
+- Devcontainer: `mcr.microsoft.com/devcontainers/go:1-1.22-bookworm` image, features node, docker-in-docker (compose v2) and claude-code. Ports: 5173 (Vite), 8080 (API), 80 (compose nginx).
+- Changing `.devcontainer/` requires the user to rebuild the container.
+
+## Working rules
+
+### Language
+
+- **The whole project is in English**: code, identifiers, code comments, UI text, error messages, tests, documentation (`README.md`, `AGENTS.md`) and commit titles.
+- Playwright selectors match UI text (`Refresh`, `No data to display.`, `Day/Week/Month`…): update the tests when changing that text.
+
+### Commits
+
+- **[Conventional Commits](https://www.conventionalcommits.org/)** format, **title only** (no body).
+- The title must be **easy to understand** for someone who doesn't know the project: it says *what the commit changes*, imperative mood, no internal jargon.
+- `type(scope): description` — types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`. Scopes: `backend`, `frontend`, `e2e`, `docker`, `devcontainer`, `docs`.
+- Examples:
+  - `feat(frontend): open the Gantt chart on today's date`
+  - `fix(backend): read milestone links from webPath`
+  - `test(e2e): check that collapsing an epic hides its children`
+  - `docs: document the GITLAB_GROUP variable`
+- One commit = one coherent change. Never commit `.env`, `node_modules/`, `dist/`, or Playwright reports.
+
+### Before committing
+
+1. `cd backend && go vet ./... && go test ./...`
+2. `cd frontend && npm run build && npm run test:e2e:mocked`
+3. If the GitLab client or GraphQL queries changed: `npm run test:e2e` (includes `@live`) with the stack running.
+
+### Documentation
+
+- **Update `README.md`** for any user-visible change: configuration, commands, application behavior.
+- **Update this `AGENTS.md`** whenever a new convention, pitfall, invariant, command or known limitation appears — or when something here becomes wrong.
+- Documentation updates go **in the same commit** as the change they describe.
+
+### Style
+
+- Code comments are in English and concise; follow the surrounding style.
+- Go formatted with `gofmt`. TypeScript in `strict` mode.
+
+## Known limitations / ideas
+
+- The Gantt opens on the earliest date (often a past milestone) instead of today.
+- The task list doesn't indent hierarchy levels (a `gantt-task-react` limitation).
+- An item without dates but attached to a milestone doesn't inherit the milestone's dates.
+- A cycle in the hierarchy (A parent of B, B parent of A) makes the involved items disappear.
