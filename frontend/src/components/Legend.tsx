@@ -18,5 +18,13 @@ export const Legend: React.FC = () => (
       <span className="legend-line" />
       Today
     </span>
+    <span className="legend-item legend-progress">
+      <span className="legend-swatch solid" />
+      Progress
+      <span className="legend-swatch linear" />
+      Expected
+      <span className="legend-swatch track" />
+      Planned
+    </span>
   </div>
 );

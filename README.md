@@ -49,6 +49,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - The chart opens centered on today, marked by a red line and a "Today" label; switching the time scale centers it again.
 - **Appearance** menu in the toolbar: Automatic (follows your system), Light or Dark — remembered in the browser.
 - The list shows the item names; hover a bar to see its dates and progress.
+- Epic and milestone bars have three layers: the planned period (transparent), the **expected** progress if the work advanced evenly between their start and end dates (semi-transparent), and the **real** progress (solid). When the solid part is shorter than the semi-transparent one, the item is behind schedule; the tooltip says by how much ("Expected 80% · 30% behind").
 - Progress is computed level by level: an item is at the mean of its direct children's progress, each weighted by its GitLab `weight` (1 point when it has none); a closed issue is at 100%. For example, 2 issues of 5 points with one closed → 50%; a capability with 3 unweighted features at 50%, 0% and 0% → 16.67%.
 - Double-click a bar to open the item in GitLab.
 - **Refresh** reloads from GitLab without waiting for the cache to expire.

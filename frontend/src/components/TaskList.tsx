@@ -84,8 +84,19 @@ export const TaskListTable: React.FC<{
   );
 };
 
+/** How far a row is from its linear progress, in words. */
+export function scheduleStatus(progress: number, linearProgress: number): string {
+  const gap = Math.round(progress - linearProgress);
+  if (gap === 0) return 'On schedule';
+  return gap > 0 ? `${gap}% ahead` : `${-gap}% behind`;
+}
+
 export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily: string }> = ({ task }) => {
+  const row = useContext(RowInfoContext).get(task.id);
   const progress = Math.round(task.progress);
+  // Epics and milestones also show their expected (linear) progress, drawn on their bar.
+  const isGroup = task.type === 'project';
+  const linear = row?.linearProgress ?? 0;
   return (
     <div className="gantt-tooltip">
       <strong>{task.name}</strong>
@@ -93,7 +104,13 @@ export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily
         From {formatDay(task.start)} to {formatDay(task.end)}
       </p>
       <p>{progress}% complete</p>
+      {isGroup && (
+        <p className="schedule">
+          Expected {Math.round(linear)}% · {scheduleStatus(task.progress, linear)}
+        </p>
+      )}
       <div className="progress-track">
+        {isGroup && <div className="progress-linear" style={{ width: `${Math.min(100, linear)}%` }} />}
         <div className="progress-value" style={{ width: `${progress}%` }} />
       </div>
     </div>

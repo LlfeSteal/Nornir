@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +79,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			End:    ensureEndAfterStart(msStart, fallbackDate(ms.DueDate, now, 30)),
 			WebURL: ms.WebURL,
 		}
+		milestones[key].LinearProgress = linearProgress(milestones[key].Start, milestones[key].End, now)
 		milestoneOrder = append(milestoneOrder, key)
 	}
 	for i := range groupMilestones {
@@ -103,6 +105,8 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			weight:            extractWeight(node.Widgets),
 			hierarchyParentID: extractHierarchyParentID(node.Widgets),
 		}
+
+		item.task.LinearProgress = linearProgress(start, end, now)
 
 		if ms := extractMilestoneWidget(node.Widgets); ms != nil {
 			item.milestoneKey = milestoneKey(ms)
@@ -237,6 +241,19 @@ func milestoneKey(ms *Milestone) string {
 // ("gid://gitlab/WorkItem/42" → "42"), or the ID itself when it has no "/".
 func lastSegment(id string) string {
 	return id[strings.LastIndex(id, "/")+1:]
+}
+
+// linearProgress is the share of the [start, end] period elapsed at now, in percent (0
+// before the start, 100 after the end): the progress expected if the work advanced evenly.
+// Dates are days: the bar runs from start at 00:00 to end at 00:00, as drawn by the UI.
+func linearProgress(start, end string, now time.Time) float64 {
+	s, errS := time.ParseInLocation(dateLayout, start, now.Location())
+	e, errE := time.ParseInLocation(dateLayout, end, now.Location())
+	if errS != nil || errE != nil || !e.After(s) {
+		return 0
+	}
+	ratio := float64(now.Sub(s)) / float64(e.Sub(s))
+	return 100 * math.Max(0, math.Min(1, ratio))
 }
 
 // weightedChild is a direct child as seen by its parent's progress: its own progress and

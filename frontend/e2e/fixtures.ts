@@ -8,26 +8,26 @@ export const config = { group: 'demo/group', gitlabUrl: 'https://gitlab.example.
 export const tree = [
   {
     id: 'M1', name: '[Milestone] Sprint 1', type: 'milestone', start: '2026-10-01', end: '2026-10-31',
-    progress: 50, webUrl: 'https://gitlab.example.com/m1',
+    progress: 50, linearProgress: 20, // ahead of schedule webUrl: 'https://gitlab.example.com/m1',
     children: [
-      { id: 'I1_ms_I1', name: 'Shared issue', type: 'issue', start: '2026-10-02', end: '2026-10-10', progress: 100, webUrl: 'https://gitlab.example.com/i1' },
+      { id: 'I1_ms_I1', name: 'Shared issue', type: 'issue', start: '2026-10-02', end: '2026-10-10', progress: 100, linearProgress: 0, webUrl: 'https://gitlab.example.com/i1' },
     ],
   },
-  { id: 'M2', name: '[Milestone] Empty sprint', type: 'milestone', start: '2026-11-01', end: '2026-11-30', progress: 0 },
+  { id: 'M2', name: '[Milestone] Empty sprint', type: 'milestone', start: '2026-11-01', end: '2026-11-30', progress: 0, linearProgress: 0 },
   {
-    id: 'E1', name: 'Main epic', type: 'epic', start: '2026-10-01', end: '2026-12-01', progress: 50,
+    id: 'E1', name: 'Main epic', type: 'epic', start: '2026-10-01', end: '2026-12-01', progress: 50, linearProgress: 80, // behind schedule
     children: [
-      { id: 'I1', name: 'Shared issue', type: 'issue', start: '2026-10-02', end: '2026-10-10', progress: 100 },
-      { id: 'I2', name: 'Standalone issue', type: 'issue', start: '2026-10-15', end: '2026-10-25', progress: 0 },
+      { id: 'I1', name: 'Shared issue', type: 'issue', start: '2026-10-02', end: '2026-10-10', progress: 100, linearProgress: 0 },
+      { id: 'I2', name: 'Standalone issue', type: 'issue', start: '2026-10-15', end: '2026-10-25', progress: 0, linearProgress: 0 },
       {
-        id: 'E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0,
-        children: [{ id: 'I3', name: 'Deep issue', type: 'issue', start: '2026-11-02', end: '2026-11-10', progress: 0 }],
+        id: 'E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0, linearProgress: 0,
+        children: [{ id: 'I3', name: 'Deep issue', type: 'issue', start: '2026-11-02', end: '2026-11-10', progress: 0, linearProgress: 0 }],
       },
     ],
   },
   {
-    id: 'E2_root_E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0,
-    children: [{ id: 'I3_root_E2', name: 'Deep issue', type: 'issue', start: '2026-11-02', end: '2026-11-10', progress: 0 }],
+    id: 'E2_root_E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0, linearProgress: 0,
+    children: [{ id: 'I3_root_E2', name: 'Deep issue', type: 'issue', start: '2026-11-02', end: '2026-11-10', progress: 0, linearProgress: 0 }],
   },
 ];
 

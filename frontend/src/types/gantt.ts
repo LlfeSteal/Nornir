@@ -7,6 +7,7 @@ export interface GanttTask {
   start: string;           // ISO format: "YYYY-MM-DD"
   end: string;             // ISO format: "YYYY-MM-DD"
   progress: number;        // Value between 0 and 100
+  linearProgress: number;  // Progress expected today from the dates (0 to 100)
   webUrl?: string;
   children?: GanttTask[];  // Recursive children
 }

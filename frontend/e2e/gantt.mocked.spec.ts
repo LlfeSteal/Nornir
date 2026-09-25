@@ -407,4 +407,61 @@ test.describe('Gantt (mocked API)', () => {
       await expect(menu).toHaveCount(0);
     });
   });
+
+  test('epic and milestone bars show their expected (linear) progress under the real one', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/');
+    await expect(page.getByTitle('Main epic')).toBeVisible();
+
+    // The bar group whose label is the given name: track, linear progress, then solid progress.
+    const layers = (name: string) =>
+      page.locator('svg text', { hasText: name }).first().evaluate((label) => {
+        const bar = label.parentElement!.querySelector('._1KJ6x')!;
+        const rects = [...bar.querySelectorAll(':scope > rect')] as SVGRectElement[];
+        return rects.slice(0, 3).map((rect) => ({
+          cls: rect.getAttribute('class') ?? '',
+          width: Number(rect.getAttribute('width')),
+          opacity: Number(getComputedStyle(rect).opacity),
+        }));
+      });
+
+    // Main epic: 50% done, 80% expected → the linear layer is wider than the progress.
+    await expect.poll(async () => (await layers('Main epic'))[1]?.cls).toBe('linear-progress');
+    const [track, linear, progress] = await layers('Main epic');
+    expect(linear.width / track.width).toBeCloseTo(0.8, 2);
+    expect(progress.width / track.width).toBeCloseTo(0.5, 2);
+    // Opacities: transparent track < linear progress < solid progress.
+    expect(track.opacity).toBeLessThan(linear.opacity);
+    expect(linear.opacity).toBeLessThan(progress.opacity);
+
+    // Sprint 1: 50% done, 20% expected → ahead, the linear layer is under the progress.
+    const sprint = await layers('[Milestone] Sprint 1');
+    expect(sprint[1].width / sprint[0].width).toBeCloseTo(0.2, 2);
+
+    // Issues keep their plain bar, without linear layer.
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
+    const issueHasLinear = await page
+      .locator('svg text', { hasText: 'Standalone issue' })
+      .evaluate((label) => !!label.parentElement!.querySelector('rect.linear-progress'));
+    expect(issueHasLinear).toBe(false);
+  });
+
+  test('the tooltip tells whether a group is ahead or behind schedule', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+    await mockApi(page);
+    await page.goto('/');
+    await expect(page.getByTitle('Main epic')).toBeVisible();
+
+    const hover = async (name: string) => {
+      await page.mouse.move(0, 0); // leave the previous bar so its tooltip closes
+      await expect(page.locator('.gantt-tooltip')).toHaveCount(0);
+      const label = (await page.locator('svg text', { hasText: name }).first().boundingBox())!;
+      await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
+    };
+    await hover('Main epic');
+    await expect(page.locator('.gantt-tooltip')).toContainText('Expected 80% · 30% behind');
+    await hover('[Milestone] Sprint 1');
+    await expect(page.locator('.gantt-tooltip')).toContainText('Expected 20% · 30% ahead');
+  });
 });

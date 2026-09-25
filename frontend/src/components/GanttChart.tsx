@@ -125,6 +125,37 @@ function paintGroupBands(root: HTMLElement, rows: FlatGanttTask[]) {
   });
 }
 
+// Epics and milestones get a third layer between their transparent track and their solid
+// progress: the linear progress, i.e. where they should be today if the work advanced evenly
+// (computed by the backend). The library can't draw it, so it is added next to the track
+// (`._2RbVy`, first rect of a project bar `._1KJ6x`), before the progress rect so the solid
+// progress stays on top. Bars sit in their row: row index = floor(y / ROW_HEIGHT).
+function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[]) {
+  root.querySelectorAll<SVGRectElement>('._1KJ6x > rect._2RbVy').forEach((track) => {
+    const row = rows[Math.floor(Number(track.getAttribute('y')) / ROW_HEIGHT)];
+    let linear = track.parentElement!.querySelector<SVGRectElement>('rect.linear-progress');
+    if (!row || !(row.linearProgress > 0)) {
+      linear?.remove();
+      return;
+    }
+    if (!linear) {
+      linear = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      linear.setAttribute('class', 'linear-progress');
+      track.after(linear);
+    }
+    const width = Number(track.getAttribute('width')) * Math.min(100, row.linearProgress) / 100;
+    setAttributes(linear, {
+      x: track.getAttribute('x') ?? '0',
+      y: track.getAttribute('y') ?? '0',
+      height: track.getAttribute('height') ?? '0',
+      rx: track.getAttribute('rx') ?? '0',
+      ry: track.getAttribute('ry') ?? '0',
+      width: String(width),
+      fill: track.getAttribute('fill') ?? 'currentColor',
+    });
+  });
+}
+
 const CENTERING_MS = 500;
 
 /** Keeps centering on today for a short while, as the library settles over a few renders.
@@ -214,10 +245,11 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
     const draw = () => {
       drawTodayLine(element, viewMode);
       paintGroupBands(element, shownRows);
+      paintLinearProgress(element, shownRows);
     };
     draw();
     const observer = new MutationObserver(draw);
-    observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'y', 'width', 'height'] });
+    observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'y', 'width', 'height', 'fill'] });
     return () => observer.disconnect();
   }, [viewMode, hasTasks, shownRows]);
 

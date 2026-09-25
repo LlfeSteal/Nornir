@@ -138,6 +138,11 @@ button { font: inherit; color: inherit; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
 .legend-line { width: 2px; height: 12px; border-radius: 1px; background: var(--red); }
+.legend-progress { gap: 6px; }
+.legend-progress .legend-swatch:not(:first-child) { margin-left: 8px; }
+.legend-swatch { width: 18px; height: 8px; border-radius: 3px; background: var(--text-secondary); }
+.legend-swatch.linear { opacity: 0.55; }
+.legend-swatch.track { opacity: 0.3; }
 
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 
@@ -214,8 +219,9 @@ button { font: inherit; color: inherit; }
 }
 .gantt-tooltip strong { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .gantt-tooltip p { margin: 2px 0 0; font-size: 12px; color: var(--text-secondary); }
-.progress-track { height: 4px; margin-top: 10px; border-radius: 2px; background: var(--fill); overflow: hidden; }
-.progress-value { height: 100%; border-radius: 2px; background: var(--blue); }
+.progress-track { position: relative; height: 4px; margin-top: 10px; border-radius: 2px; background: var(--fill); overflow: hidden; }
+.progress-value, .progress-linear { position: absolute; left: 0; top: 0; height: 100%; border-radius: 2px; background: var(--blue); }
+.progress-linear { opacity: 0.4; }
 
 /* ---------- gantt-task-react overrides ----------
    The library ships CSS modules with hashed class names. They are stable for the pinned
@@ -235,6 +241,8 @@ button { font: inherit; color: inherit; }
 /* Groups (milestones, epics): a tinted track with the solid progress on top, no "folder" ears */
 .gantt-chart ._2RbVy { opacity: 0.3; }
 .gantt-chart ._2pZMF { display: none; }
+/* Linear (expected) progress of groups: between the track (0.3) and the solid progress */
+.linear-progress { opacity: 0.55; pointer-events: none; }
 .gantt-chart ._1KJ6x ~ ._3zRJQ { fill: var(--text); font-weight: 600; }
 .gantt-chart ._KxSXS, .gantt-chart ._1KJ6x { transition: filter 0.15s var(--ease); }
 .gantt-chart ._KxSXS:hover, .gantt-chart ._1KJ6x:hover { filter: brightness(1.08) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15)); }

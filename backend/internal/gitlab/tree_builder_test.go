@@ -362,3 +362,49 @@ func TestCapabilityAveragesItsFeaturesByWeight(t *testing.T) {
 		t.Fatalf("weighted features: cap progress = %v, want 25", got)
 	}
 }
+
+func TestLinearProgressFromOwnDates(t *testing.T) {
+	now := time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name       string
+		start, end string
+		want       float64
+	}{
+		{"half way", "2026-01-01", "2026-01-11", 50},
+		{"not started", "2026-01-10", "2026-01-20", 0},
+		{"overdue", "2025-12-01", "2026-01-01", 100},
+		{"starts today", "2026-01-06", "2026-01-16", 0},
+		{"invalid", "", "2026-01-16", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := linearProgress(tc.start, tc.end, now); math.Abs(got-tc.want) > 1e-9 {
+				t.Fatalf("linearProgress(%s, %s) = %v, want %v", tc.start, tc.end, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLinearProgressIsSetOnEveryRow(t *testing.T) {
+	// fixedNow is 2026-01-10: the epic (Jan 1 → Jan 21) is at 9/20 days, the milestone
+	// (Jan 5 → Jan 15) half way, and the issue (Jan 20 → Feb 3) hasn't started.
+	tree := buildGanttTree([]WorkItemNode{
+		node("epic", "Epic", "OPEN", dates("2026-01-01", "2026-01-21")),
+		node("issue", "Issue", "OPEN", parent("epic"), dates("2026-01-20", "2026-02-03")),
+	}, []Milestone{{ID: "ms", Title: "ms", StartDate: "2026-01-05", DueDate: "2026-01-15"}}, fixedNow)
+
+	byID := map[string]model.GanttTask{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			byID[task.ID] = task
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+	for id, want := range map[string]float64{"ms": 50, "epic": 45, "issue": 0} {
+		if got := byID[id].LinearProgress; math.Abs(got-want) > 1e-9 {
+			t.Errorf("%s linearProgress = %v, want %v", id, got, want)
+		}
+	}
+}
