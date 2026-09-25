@@ -20,13 +20,13 @@ export const tree = [
       { id: 'I1', name: 'Shared issue', type: 'issue', start: '2026-10-02', end: '2026-10-10', progress: 100, linearProgress: 0 },
       { id: 'I2', name: 'Standalone issue', type: 'issue', start: '2026-10-15', end: '2026-10-25', progress: 0, linearProgress: 0 },
       {
-        id: 'E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0, linearProgress: 0,
+        id: 'E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0, linearProgress: 3, // slightly behind
         children: [{ id: 'I3', name: 'Deep issue', type: 'issue', start: '2026-11-02', end: '2026-11-10', progress: 0, linearProgress: 0 }],
       },
     ],
   },
   {
-    id: 'E2_root_E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0, linearProgress: 0,
+    id: 'E2_root_E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0, linearProgress: 3,
     children: [{ id: 'I3_root_E2', name: 'Deep issue', type: 'issue', start: '2026-11-02', end: '2026-11-10', progress: 0, linearProgress: 0 }],
   },
 ];

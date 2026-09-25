@@ -161,7 +161,7 @@ test.describe('Gantt (mocked API)', () => {
     const nested = await barFill(page, 'Child epic', 0);
     const topLevel = await barFill(page, 'Child epic', 1);
     expect(luminance(nested)).toBeGreaterThan(luminance(topLevel));
-    expect(topLevel).toBe(await barFill(page, 'Main epic'));
+    expect(topLevel).toBe('#ff9500'); // the top-level copy: at risk (orange), not toned down
   });
 
   test('the list only shows item names', async ({ page }) => {
@@ -319,7 +319,7 @@ test.describe('Gantt (mocked API)', () => {
     const card = await page.locator('.gantt-chart').evaluate((el) => getComputedStyle(el).backgroundColor);
     expect(card).toBe('rgb(28, 28, 30)');
     // Bars use the dark variants of the system colors.
-    expect(await barFill(page, 'Main epic')).toBe('#0a84ff');
+    expect(await barFill(page, 'Main epic')).toBe('#ff453a'); // late
   });
 
   test.describe('appearance', () => {
@@ -342,7 +342,7 @@ test.describe('Gantt (mocked API)', () => {
       await chooseAppearance(page, 'Light');
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
       await expect.poll(() => cardColor(page)).toBe('rgb(255, 255, 255)');
-      await expect.poll(() => barFill(page, 'Main epic')).toBe('#007aff');
+      await expect.poll(() => barFill(page, 'Main epic')).toBe('#ff3b30'); // late, light palette
       await expect(page.getByRole('button', { name: 'Appearance' })).toHaveAttribute('data-appearance', 'light');
     });
 
@@ -354,7 +354,7 @@ test.describe('Gantt (mocked API)', () => {
 
       await chooseAppearance(page, 'Dark');
       await expect.poll(() => cardColor(page)).toBe('rgb(28, 28, 30)');
-      await expect.poll(() => barFill(page, 'Main epic')).toBe('#0a84ff');
+      await expect.poll(() => barFill(page, 'Main epic')).toBe('#ff453a'); // late, dark palette
 
       await page.reload();
       // Applied before the app renders (no flash), then kept by the app.
@@ -375,7 +375,7 @@ test.describe('Gantt (mocked API)', () => {
 
       await page.emulateMedia({ colorScheme: 'dark' });
       await expect.poll(() => cardColor(page)).toBe('rgb(28, 28, 30)');
-      await expect.poll(() => barFill(page, 'Main epic')).toBe('#0a84ff');
+      await expect.poll(() => barFill(page, 'Main epic')).toBe('#ff453a'); // late, dark palette
     });
 
     test('the menu works with the keyboard and closes on Escape or a click outside', async ({ page }) => {
@@ -461,7 +461,60 @@ test.describe('Gantt (mocked API)', () => {
     };
     await hover('Main epic');
     await expect(page.locator('.gantt-tooltip')).toContainText('Expected 80% · 30% behind');
+    // The status color also applies to the tooltip's progress bar.
+    await expect
+      .poll(() => page.locator('.gantt-tooltip .progress-value').evaluate((el) => getComputedStyle(el).backgroundColor))
+      .toBe('rgb(255, 59, 48)');
     await hover('[Milestone] Sprint 1');
-    await expect(page.locator('.gantt-tooltip')).toContainText('Expected 20% · 30% ahead');
+    await expect(page.locator('.gantt-tooltip')).toContainText('Expected 20% · On track · 30% ahead');
+  });
+
+  test('epic and milestone bars are colored by schedule status', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await mockApi(page);
+    await page.goto('/');
+    await expect(page.getByTitle('Main epic')).toBeVisible();
+
+    // Main epic 50% vs 80% expected → late; Sprint 1 50% vs 20% → on track;
+    // Child epic 0% vs 3% → at risk.
+    expect(await barFill(page, 'Main epic')).toBe('#ff3b30');
+    expect(await barFill(page, '[Milestone] Sprint 1')).toBe('#34c759');
+    expect(await barFill(page, 'Child epic')).toBe('#ff9500');
+    await expect(page.locator('.task-list-row', { has: page.getByTitle('Main epic') })).toHaveAttribute('data-schedule', 'late');
+    await expect(page.locator('.task-list-row', { has: page.getByTitle('[Milestone] Sprint 1') })).toHaveAttribute('data-schedule', 'on-track');
+    await expect(page.locator('.task-list-row', { has: page.getByTitle('Child epic') })).toHaveAttribute('data-schedule', 'at-risk');
+
+    // The linear layer follows the status color of its bar.
+    const linearFill = await page
+      .locator('svg text', { hasText: 'Main epic' })
+      .evaluate((label) => label.parentElement!.querySelector('rect.linear-progress')!.getAttribute('fill'));
+    expect(linearFill).toBe('#ff3b30');
+
+    // Issues keep their type color (teal), never a status color.
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
+    expect(await barFill(page, 'Standalone issue')).not.toMatch(/#34c759|#ff9500|#ff3b30/);
+    await expect(page.locator('.task-list-row', { has: page.getByTitle('Standalone issue') })).not.toHaveAttribute('data-schedule', /.+/);
+  });
+
+  test('the 5-point threshold: exactly 5 behind is orange, more is red', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    const group = (id: string, name: string, progress: number, linearProgress: number) => ({
+      id, name, type: 'epic', start: '2026-10-01', end: '2026-10-31', progress, linearProgress,
+      children: [{ id: `${id}-issue`, name: `${name} issue`, type: 'issue', start: '2026-10-01', end: '2026-10-05', progress: 0, linearProgress: 0 }],
+    });
+    await mockApi(page, {
+      body: [
+        group('a', 'Exactly on track', 40, 40),
+        group('b', 'Five points behind', 35, 40),
+        group('c', 'Just over five', 34.9, 40),
+      ],
+    });
+    await page.goto('/');
+    await expect(page.getByTitle('Just over five')).toBeVisible();
+
+    expect(await barFill(page, 'Exactly on track')).toBe('#34c759');
+    expect(await barFill(page, 'Five points behind')).toBe('#ff9500');
+    expect(await barFill(page, 'Just over five')).toBe('#ff3b30');
   });
 });

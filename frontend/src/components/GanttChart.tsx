@@ -7,6 +7,7 @@ import { RowInfoContext, TaskListHeader, TaskListTable, TooltipContent } from '.
 import { columnFraction, columnsBetween } from '../utils/today';
 import { groupBand, muted, PALETTES } from '../utils/colors';
 import { useColorScheme } from '../utils/appearance';
+import { scheduleStatus } from '../utils/schedule';
 
 interface Props {
   data: GanttTask[];
@@ -212,9 +213,13 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
       // Children are drawn toned down compared to the top-level bars they belong to.
       const palette = PALETTES[scheme];
       const shade = (color: string) => (item.depth > 0 ? muted(color, scheme) : color);
-      const color = shade(palette.types[item.type]);
       // Any item with children becomes a collapsible "project".
       const isGroup = item.type === 'milestone' || item.hasChildren;
+      // Epics and milestones are colored by schedule status (green / orange / red), other
+      // rows by type.
+      const color = shade(
+        isGroup ? palette.status[scheduleStatus(item.progress, item.linearProgress)] : palette.types[item.type],
+      );
       return {
         start: parseDay(item.start),
         end: parseDay(item.end),

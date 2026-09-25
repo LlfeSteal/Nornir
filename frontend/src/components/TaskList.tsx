@@ -2,6 +2,7 @@ import React, { createContext, useContext } from 'react';
 import { Task } from 'gantt-task-react';
 import { FlatGanttTask } from '../utils/flatten';
 import { ChevronIcon } from './Icons';
+import { scheduleLabel, scheduleStatus } from '../utils/schedule';
 
 // Replacements for gantt-task-react's list and tooltip: the list shows only the item
 // names (no From/To columns), and the dates move to the tooltip shown on a bar.
@@ -55,6 +56,7 @@ export const TaskListTable: React.FC<{
             data-depth={depth}
             data-parent-type={row?.parentType}
             data-expanded={expanded ? 'true' : undefined}
+            data-schedule={isGroup && row ? scheduleStatus(row.progress, row.linearProgress) : undefined}
           >
             <div className="task-list-cell" style={{ width: rowWidth }} title={task.name}>
               {row?.guides.map((line, level) => (
@@ -84,29 +86,23 @@ export const TaskListTable: React.FC<{
   );
 };
 
-/** How far a row is from its linear progress, in words. */
-export function scheduleStatus(progress: number, linearProgress: number): string {
-  const gap = Math.round(progress - linearProgress);
-  if (gap === 0) return 'On schedule';
-  return gap > 0 ? `${gap}% ahead` : `${-gap}% behind`;
-}
-
 export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily: string }> = ({ task }) => {
   const row = useContext(RowInfoContext).get(task.id);
   const progress = Math.round(task.progress);
   // Epics and milestones also show their expected (linear) progress, drawn on their bar.
   const isGroup = task.type === 'project';
   const linear = row?.linearProgress ?? 0;
+  const status = isGroup ? scheduleStatus(task.progress, linear) : undefined;
   return (
-    <div className="gantt-tooltip">
+    <div className="gantt-tooltip" data-status={status}>
       <strong>{task.name}</strong>
       <p>
         From {formatDay(task.start)} to {formatDay(task.end)}
       </p>
       <p>{progress}% complete</p>
       {isGroup && (
-        <p className="schedule">
-          Expected {Math.round(linear)}% · {scheduleStatus(task.progress, linear)}
+        <p className="schedule" data-status={status}>
+          Expected {Math.round(linear)}% · <strong>{scheduleLabel(task.progress, linear)}</strong>
         </p>
       )}
       <div className="progress-track">

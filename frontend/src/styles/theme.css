@@ -24,13 +24,18 @@
   --blue: #007aff;
   --purple: #af52de;
   --green: #34c759;
+  --orange: #ff9500;
+  --teal: #30b0c7;
   --red: #ff3b30;
   --milestone: var(--purple);
   --epic: var(--blue);
-  --issue: var(--green);
+  --issue: var(--teal); /* not green: green means "on track" */
+  --on-track: var(--green);
+  --at-risk: var(--orange);
+  --late: var(--red);
   --milestone-band: rgba(175, 82, 222, 0.1);
   --epic-band: rgba(0, 122, 255, 0.1);
-  --issue-band: rgba(52, 199, 89, 0.1);
+  --issue-band: rgba(48, 176, 199, 0.1);
 
   --radius: 12px;
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -59,10 +64,12 @@
   --blue: #0a84ff;
   --purple: #bf5af2;
   --green: #30d158;
+  --orange: #ff9f0a;
+  --teal: #40c8e0;
   --red: #ff453a;
   --milestone-band: rgba(191, 90, 242, 0.16);
   --epic-band: rgba(10, 132, 255, 0.16);
-  --issue-band: rgba(48, 209, 88, 0.16);
+  --issue-band: rgba(64, 200, 224, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -222,6 +229,15 @@ button { font: inherit; color: inherit; }
 .progress-track { position: relative; height: 4px; margin-top: 10px; border-radius: 2px; background: var(--fill); overflow: hidden; }
 .progress-value, .progress-linear { position: absolute; left: 0; top: 0; height: 100%; border-radius: 2px; background: var(--blue); }
 .progress-linear { opacity: 0.4; }
+.gantt-tooltip .schedule[data-status] strong { display: inline; margin: 0; font-size: inherit; }
+.gantt-tooltip .schedule[data-status='on-track'] strong { color: var(--on-track); }
+.gantt-tooltip .schedule[data-status='at-risk'] strong { color: var(--at-risk); }
+.gantt-tooltip .schedule[data-status='late'] strong { color: var(--late); }
+.gantt-tooltip[data-status='on-track'] .progress-value, .gantt-tooltip[data-status='on-track'] .progress-linear { background: var(--on-track); }
+.gantt-tooltip[data-status='at-risk'] .progress-value, .gantt-tooltip[data-status='at-risk'] .progress-linear { background: var(--at-risk); }
+.gantt-tooltip[data-status='late'] .progress-value, .gantt-tooltip[data-status='late'] .progress-linear { background: var(--late); }
+.legend-group { display: inline-flex; flex-wrap: wrap; gap: 16px; }
+.legend-group + .legend-group { padding-left: 16px; border-left: 0.5px solid var(--separator); }
 
 /* ---------- gantt-task-react overrides ----------
    The library ships CSS modules with hashed class names. They are stable for the pinned
