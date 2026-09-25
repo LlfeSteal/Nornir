@@ -2,7 +2,7 @@
    colors, light and dark appearances, hairline separators, soft materials and short motion. */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
 
   --bg: #f5f5f7; /* grouped background */
@@ -19,6 +19,7 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
   --popover-shadow: 0 8px 30px rgba(0, 0, 0, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
   --segment-thumb: #ffffff;
+  --menu-bg: rgba(246, 246, 248, 0.97);
 
   --blue: #007aff;
   --purple: #af52de;
@@ -35,31 +36,33 @@
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #000000;
-    --card: #1c1c1e;
-    --row-alt: #202022;
-    --row-hover: rgba(255, 255, 255, 0.05);
-    --text: #f5f5f7;
-    --text-secondary: rgba(235, 235, 245, 0.6);
-    --text-tertiary: rgba(235, 235, 245, 0.3);
-    --separator: rgba(84, 84, 88, 0.45);
-    --fill: rgba(118, 118, 128, 0.24);
-    --fill-pressed: rgba(118, 118, 128, 0.36);
-    --material: rgba(28, 28, 30, 0.72);
-    --shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08);
-    --popover-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
-    --segment-thumb: #636366;
+/* Dark appearance. data-theme is set on <html> from the user's choice (Automatic / Light /
+   Dark, see utils/appearance.ts and the pre-paint script in index.html). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #000000;
+  --card: #1c1c1e;
+  --row-alt: #202022;
+  --row-hover: rgba(255, 255, 255, 0.05);
+  --text: #f5f5f7;
+  --text-secondary: rgba(235, 235, 245, 0.6);
+  --text-tertiary: rgba(235, 235, 245, 0.3);
+  --separator: rgba(84, 84, 88, 0.45);
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-pressed: rgba(118, 118, 128, 0.36);
+  --material: rgba(28, 28, 30, 0.72);
+  --shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  --popover-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  --segment-thumb: #636366;
+  --menu-bg: rgba(44, 44, 46, 0.97);
 
-    --blue: #0a84ff;
-    --purple: #bf5af2;
-    --green: #30d158;
-    --red: #ff453a;
-    --milestone-band: rgba(191, 90, 242, 0.16);
-    --epic-band: rgba(10, 132, 255, 0.16);
-    --issue-band: rgba(48, 209, 88, 0.16);
-  }
+  --blue: #0a84ff;
+  --purple: #bf5af2;
+  --green: #30d158;
+  --red: #ff453a;
+  --milestone-band: rgba(191, 90, 242, 0.16);
+  --epic-band: rgba(10, 132, 255, 0.16);
+  --issue-band: rgba(48, 209, 88, 0.16);
 }
 
 * { box-sizing: border-box; }
@@ -247,3 +250,23 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Appearance menu (macOS-style pull-down) */
+.menu-anchor { position: relative; }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 190px; padding: 5px;
+  /* Near-opaque: the menu lives inside the toolbar, which already has a backdrop-filter, so
+     its own blur could only see the toolbar and the content below would show through. */
+  border-radius: 10px; background: var(--menu-bg);
+  box-shadow: var(--popover-shadow);
+  transform-origin: top right; animation: menu-in 0.12s var(--ease);
+}
+@keyframes menu-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+.menu-header { padding: 4px 8px 6px; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+.menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 8px;
+  border: 0; border-radius: 6px; background: none; font-size: 13px; text-align: left; cursor: default;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--blue); color: #fff; outline: none; }
+.menu-item .check { margin-left: auto; visibility: hidden; }
+.menu-item[aria-checked='true'] .check { visibility: visible; }

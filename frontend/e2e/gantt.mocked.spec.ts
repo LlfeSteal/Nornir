@@ -317,4 +317,90 @@ test.describe('Gantt (mocked API)', () => {
     // Bars use the dark variants of the system colors.
     expect(await barFill(page, 'Main epic')).toBe('#0a84ff');
   });
+
+  test.describe('appearance', () => {
+    const cardColor = (page: Page) =>
+      page.locator('.gantt-chart').evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    async function chooseAppearance(page: Page, label: 'Automatic' | 'Light' | 'Dark') {
+      await page.getByRole('button', { name: 'Appearance' }).click();
+      await page.getByRole('menuitemradio', { name: label }).click();
+      await expect(page.getByRole('menu')).toHaveCount(0);
+    }
+
+    test('Light overrides a dark system', async ({ page }) => {
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+      expect(await cardColor(page)).toBe('rgb(28, 28, 30)');
+
+      await chooseAppearance(page, 'Light');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+      await expect.poll(() => cardColor(page)).toBe('rgb(255, 255, 255)');
+      await expect.poll(() => barFill(page, 'Main epic')).toBe('#007aff');
+      await expect(page.getByRole('button', { name: 'Appearance' })).toHaveAttribute('data-appearance', 'light');
+    });
+
+    test('Dark overrides a light system and is remembered', async ({ page }) => {
+      await page.emulateMedia({ colorScheme: 'light' });
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      await chooseAppearance(page, 'Dark');
+      await expect.poll(() => cardColor(page)).toBe('rgb(28, 28, 30)');
+      await expect.poll(() => barFill(page, 'Main epic')).toBe('#0a84ff');
+
+      await page.reload();
+      // Applied before the app renders (no flash), then kept by the app.
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+      expect(await cardColor(page)).toBe('rgb(28, 28, 30)');
+      await page.getByRole('button', { name: 'Appearance' }).click();
+      await expect(page.getByRole('menuitemradio', { name: 'Dark' })).toHaveAttribute('aria-checked', 'true');
+    });
+
+    test('Automatic follows the system while the page is open', async ({ page }) => {
+      await page.emulateMedia({ colorScheme: 'light' });
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Appearance' })).toHaveAttribute('data-appearance', 'system');
+      expect(await cardColor(page)).toBe('rgb(255, 255, 255)');
+
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await expect.poll(() => cardColor(page)).toBe('rgb(28, 28, 30)');
+      await expect.poll(() => barFill(page, 'Main epic')).toBe('#0a84ff');
+    });
+
+    test('the menu works with the keyboard and closes on Escape or a click outside', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      const button = page.getByRole('button', { name: 'Appearance' });
+
+      await button.click();
+      const menu = page.getByRole('menu', { name: 'Appearance' });
+      await expect(menu).toBeVisible();
+      await expect(page.getByRole('menuitemradio')).toHaveText(['Automatic', 'Light', 'Dark']);
+      await expect(page.getByRole('menuitemradio', { name: 'Automatic' })).toBeFocused();
+
+      await page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(button).toBeFocused();
+
+      // Arrow keys move through the items; Enter picks one.
+      await button.click();
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('menuitemradio', { name: 'Dark' })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+      await button.click();
+      await expect(menu).toBeVisible();
+      await page.getByRole('heading', { level: 1 }).click();
+      await expect(menu).toHaveCount(0);
+    });
+  });
 });

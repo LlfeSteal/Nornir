@@ -47,7 +47,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - Everything starts collapsed; the chevrons expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
 - The toolbar holds the time scale (Day / Week / Month), **Today** (scrolls back to today) and **Refresh**, with the time of the last update.
 - The chart opens centered on today, marked by a red line and a "Today" label; switching the time scale centers it again.
-- The interface follows the light or dark appearance of your system.
+- **Appearance** menu in the toolbar: Automatic (follows your system), Light or Dark — remembered in the browser.
 - The list shows the item names; hover a bar to see its dates and progress.
 - Progress is computed level by level: an item is at the mean of its direct children's progress, each weighted by its GitLab `weight` (1 point when it has none); a closed issue is at 100%. For example, 2 issues of 5 points with one closed → 50%; a capability with 3 unweighted features at 50%, 0% and 0% → 16.67%.
 - Double-click a bar to open the item in GitLab.

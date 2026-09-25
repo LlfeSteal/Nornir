@@ -2,6 +2,8 @@ import React from 'react';
 import { ViewMode } from 'gantt-task-react';
 import { AppConfig } from '../api/gantt';
 import { SegmentedControl } from './SegmentedControl';
+import { AppearanceMenu } from './AppearanceMenu';
+import { Appearance } from '../utils/appearance';
 import { RefreshIcon, TimelineIcon, TodayIcon } from './Icons';
 
 export const VIEW_MODES: { label: string; value: ViewMode }[] = [
@@ -19,6 +21,8 @@ interface Props {
   onToday: () => void;
   onRefresh: () => void;
   chartReady: boolean;
+  appearance: Appearance;
+  onAppearanceChange: (appearance: Appearance) => void;
 }
 
 const timeFormat: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
@@ -32,6 +36,8 @@ export const Toolbar: React.FC<Props> = ({
   onToday,
   onRefresh,
   chartReady,
+  appearance,
+  onAppearanceChange,
 }) => (
   <header className="toolbar">
     <div className="toolbar-title">
@@ -71,6 +77,7 @@ export const Toolbar: React.FC<Props> = ({
       >
         <RefreshIcon size={15} className={loading ? 'spin' : undefined} />
       </button>
+      <AppearanceMenu appearance={appearance} onChange={onAppearanceChange} />
     </div>
   </header>
 );

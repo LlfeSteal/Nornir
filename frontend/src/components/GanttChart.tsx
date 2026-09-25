@@ -5,7 +5,8 @@ import { GanttTask } from '../types/gantt';
 import { FlatGanttTask, flattenGanttTree, visibleRows } from '../utils/flatten';
 import { RowInfoContext, TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
 import { columnFraction, columnsBetween } from '../utils/today';
-import { groupBand, muted, PALETTES, useColorScheme } from '../utils/colors';
+import { groupBand, muted, PALETTES } from '../utils/colors';
+import { useColorScheme } from '../utils/appearance';
 
 interface Props {
   data: GanttTask[];

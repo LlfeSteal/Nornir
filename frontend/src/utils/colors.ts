@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import type { GanttTaskType } from '../types/gantt';
 
 // Apple system colors. The CSS uses them through variables (styles/theme.css); the Gantt
@@ -16,19 +15,6 @@ export const PALETTES: Record<ColorScheme, Palette> = {
   light: { types: { milestone: '#af52de', epic: '#007aff', issue: '#34c759' }, selected: '#0062cc' },
   dark: { types: { milestone: '#bf5af2', epic: '#0a84ff', issue: '#30d158' }, selected: '#409cff' },
 };
-
-/** The appearance of the system, kept up to date when the user switches it. */
-export function useColorScheme(): ColorScheme {
-  const query = '(prefers-color-scheme: dark)';
-  const [scheme, setScheme] = useState<ColorScheme>(() => (window.matchMedia(query).matches ? 'dark' : 'light'));
-  useEffect(() => {
-    const media = window.matchMedia(query);
-    const update = () => setScheme(media.matches ? 'dark' : 'light');
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
-  return scheme;
-}
 
 /** CSS value of the band behind the rows of an expanded group (see theme.css). */
 export function groupBand(parentType: GanttTaskType): string {

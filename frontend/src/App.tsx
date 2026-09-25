@@ -6,6 +6,7 @@ import { Legend } from './components/Legend';
 import { EmptyState, ErrorBanner, Skeleton } from './components/StateViews';
 import { AppConfig, errorMessage, fetchConfig, fetchGantt } from './api/gantt';
 import { GanttTask } from './types/gantt';
+import { ColorSchemeContext, useAppearance } from './utils/appearance';
 
 export const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -15,6 +16,7 @@ export const App: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
   const chart = useRef<GanttChartHandle>(null);
+  const { appearance, scheme, setAppearance } = useAppearance();
 
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
@@ -38,7 +40,7 @@ export const App: React.FC = () => {
   const hasItems = !!data && data.length > 0;
 
   return (
-    <>
+    <ColorSchemeContext.Provider value={scheme}>
       <Toolbar
         config={config}
         lastUpdated={lastUpdated}
@@ -48,6 +50,8 @@ export const App: React.FC = () => {
         onToday={() => chart.current?.scrollToToday()}
         onRefresh={() => void load(true)}
         chartReady={hasItems}
+        appearance={appearance}
+        onAppearanceChange={setAppearance}
       />
       <main className="content">
         {error && <ErrorBanner message={error} onRetry={() => void load(true)} />}
@@ -58,6 +62,6 @@ export const App: React.FC = () => {
         {data && data.length === 0 && <EmptyState />}
         {hasItems && <GanttChart ref={chart} data={data} viewMode={viewMode} />}
       </main>
-    </>
+    </ColorSchemeContext.Provider>
   );
 };
