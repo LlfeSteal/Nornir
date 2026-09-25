@@ -107,6 +107,8 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 - `flattenGanttTree` yields a list where each parent precedes its children: `gantt-task-react` requires it.
 - Any item with children (and every milestone) is a collapsible `project`; leaves are `task`s. Everything starts **collapsed**: `GanttChart` only tracks the `expanded` set, so groups that appear after a refresh are collapsed too. `App` keeps the chart mounted during a refresh so expanded rows survive it.
 - `YYYY-MM-DD` dates are parsed in **local** time (`parseDay`), not with `new Date(iso)` (UTC).
+- The list and the bar tooltip are our own components (`components/TaskList.tsx`, passed as `TaskListHeader` / `TaskListTable` / `TooltipContent`): the list shows only the item names; the dates are in the tooltip ("From … to …"). The e2e tests rely on the row structure: cell `div[title=name]` containing the `▶`/`▼` expander.
+- Bar labels (`svg text`) don't receive pointer events: in tests, hover a bar by moving the mouse onto its label's bounding box.
 - Double-clicking a bar opens the item in GitLab.
 
 ## Tests

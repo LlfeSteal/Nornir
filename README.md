@@ -45,6 +45,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - Every epic is also listed at the top level, on top of its place under its parent epic.
 - Everything starts collapsed; the triangles expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
 - Day / Week / Month views.
+- The list shows the item names; hover a bar to see its dates and progress.
 - Double-click a bar to open the item in GitLab.
 - **Refresh** reloads from GitLab without waiting for the cache to expire.
 - Items without dates in GitLab are shown over 14 days starting today.

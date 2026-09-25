@@ -3,6 +3,7 @@ import { Gantt, Task, ViewMode } from 'gantt-task-react';
 import 'gantt-task-react/dist/index.css';
 import { GanttTask, GanttTaskType } from '../types/gantt';
 import { flattenGanttTree } from '../utils/flatten';
+import { TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
 
 interface Props {
   data: GanttTask[];
@@ -94,8 +95,10 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
       <Gantt
         tasks={tasks}
         viewMode={viewMode}
-        locale="en"
         listCellWidth="220px"
+        TaskListHeader={TaskListHeader}
+        TaskListTable={TaskListTable}
+        TooltipContent={TooltipContent}
         columnWidth={viewMode === ViewMode.Month ? 200 : viewMode === ViewMode.Week ? 120 : 50}
         onExpanderClick={toggle}
         onDoubleClick={openInGitLab}

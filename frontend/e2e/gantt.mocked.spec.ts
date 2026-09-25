@@ -52,6 +52,30 @@ test.describe('Gantt (mocked API)', () => {
     await expect(page.getByTitle('Shared issue')).toHaveCount(1); // the copy under the milestone remains
   });
 
+  test('the list only shows item names', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/');
+
+    await expect(page.locator('.task-list-header')).toHaveText('Name');
+    await expect(page.getByText('From', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('To', { exact: true })).toHaveCount(0);
+    // No date is written in the list rows.
+    await expect(page.locator('.task-list')).not.toContainText('2026');
+  });
+
+  test('hovering a bar shows its dates in the tooltip', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/');
+
+    // The label doesn't receive pointer events: move the mouse onto it, over the bar.
+    const label = await page.locator('svg text', { hasText: 'Main epic' }).boundingBox();
+    await page.mouse.move(label!.x + label!.width / 2, label!.y + label!.height / 2);
+    const tooltip = page.locator('.gantt-tooltip');
+    await expect(tooltip).toContainText('Main epic');
+    await expect(tooltip).toContainText('From Oct 1, 2026 to Dec 1, 2026');
+    await expect(tooltip).toContainText('Progress: 50 %');
+  });
+
   test('switches view mode', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
