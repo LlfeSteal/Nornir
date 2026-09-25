@@ -1,5 +1,21 @@
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import { config, mockApi } from './fixtures';
+
+const LIST_WIDTH = 220;
+
+/** Horizontal position of the today line, relative to its column and to the chart area. */
+async function todayLinePosition(page: Page) {
+  const line = page.locator('line.today-line');
+  await expect(line).toHaveCount(1);
+  const lineBox = (await line.boundingBox())!;
+  const columnBox = (await page.locator('g.today rect').boundingBox())!;
+  const chartBox = (await page.locator('.gantt-chart').boundingBox())!;
+  const lineX = lineBox.x + lineBox.width / 2;
+  return {
+    offsetInColumn: lineX - columnBox.x,
+    offsetFromCenter: lineX - (chartBox.x + LIST_WIDTH + (chartBox.width - LIST_WIDTH) / 2),
+  };
+}
 
 test.describe('Gantt (mocked API)', () => {
   test('shows the configured group and only the collapsed top-level rows', async ({ page }) => {
@@ -64,6 +80,8 @@ test.describe('Gantt (mocked API)', () => {
   });
 
   test('hovering a bar shows its dates in the tooltip', async ({ page }) => {
+    // The chart opens centered on today: pick a day where the hovered bar is on screen.
+    await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
     await mockApi(page);
     await page.goto('/');
 
@@ -74,6 +92,38 @@ test.describe('Gantt (mocked API)', () => {
     await expect(tooltip).toContainText('Main epic');
     await expect(tooltip).toContainText('From Oct 1, 2026 to Dec 1, 2026');
     await expect(tooltip).toContainText('Progress: 50 %');
+  });
+
+  test('marks today with a line and centers the chart on it', async ({ page }) => {
+    // Thursday at noon: the middle of its week column.
+    await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+    await mockApi(page);
+    await page.goto('/');
+
+    let position = await todayLinePosition(page);
+    expect(position.offsetInColumn).toBeCloseTo(0.5 * 120, 0); // week columns are 120 px
+    expect(Math.abs(position.offsetFromCenter)).toBeLessThanOrEqual(120);
+
+    // Switching view mode centers again, and the line follows the new columns.
+    await page.getByRole('button', { name: 'Month', exact: true }).click();
+    await expect.poll(async () => (await todayLinePosition(page)).offsetInColumn).toBeCloseTo((14.5 / 31) * 200, 0);
+    position = await todayLinePosition(page);
+    expect(Math.abs(position.offsetFromCenter)).toBeLessThanOrEqual(200);
+  });
+
+  test('the today line stays when rows are expanded', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+    await mockApi(page);
+    await page.goto('/');
+    await expect(page.locator('line.today-line')).toHaveCount(1);
+
+    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
+    const line = page.locator('line.today-line');
+    await expect(line).toHaveCount(1);
+    // The line spans every visible row, including the new ones (rows are 50 px high).
+    const rows = await page.locator('.task-list-row').count();
+    await expect.poll(async () => Number(await line.getAttribute('y2'))).toBeGreaterThanOrEqual(rows * 50);
   });
 
   test('switches view mode', async ({ page }) => {

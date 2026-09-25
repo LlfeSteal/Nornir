@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Gantt, Task, ViewMode } from 'gantt-task-react';
 import 'gantt-task-react/dist/index.css';
 import { GanttTask, GanttTaskType } from '../types/gantt';
 import { flattenGanttTree } from '../utils/flatten';
 import { TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
+import { columnFraction, columnsBetween } from '../utils/today';
 
 interface Props {
   data: GanttTask[];
@@ -21,6 +22,66 @@ const VIEW_MODES: { label: string; mode: ViewMode }[] = [
   { label: 'Month', mode: ViewMode.Month },
 ];
 
+const LIST_WIDTH = 220; // px, the single Name column
+
+const COLUMN_WIDTHS: Partial<Record<ViewMode, number>> = {
+  [ViewMode.Day]: 50,
+  [ViewMode.Week]: 120,
+  [ViewMode.Month]: 200,
+};
+
+// gantt-task-react can only fill today's whole column (a whole week in Week view), so the
+// line is drawn by hand: we find the column it highlights (`g.today rect`, made transparent
+// through todayColor) and put a line at today's position inside that column. The library
+// re-renders its SVG on its own (scrolling, expanding rows...), hence the MutationObserver.
+function drawTodayLine(root: HTMLElement, viewMode: ViewMode) {
+  const column = root.querySelector<SVGRectElement>('g.today rect');
+  const svg = column?.ownerSVGElement;
+  let line = root.querySelector<SVGLineElement>('line.today-line');
+  if (!column || !svg || !column.getAttribute('width')) {
+    line?.remove();
+    return;
+  }
+  if (!line || line.ownerSVGElement !== svg) {
+    line?.remove();
+    line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'today-line');
+    svg.appendChild(line); // last child: drawn above the bars
+  }
+  const x = String(
+    Number(column.getAttribute('x')) + columnFraction(new Date(), viewMode) * Number(column.getAttribute('width')),
+  );
+  const attributes: Record<string, string> = { x1: x, x2: x, y1: '0', y2: column.getAttribute('height') ?? '0' };
+  for (const [name, value] of Object.entries(attributes)) {
+    // Only write changes, so our own writes don't keep triggering the observer.
+    if (line.getAttribute(name) !== value) line.setAttribute(name, value);
+  }
+}
+
+// Scrolls the chart so that the today line is in the middle of the visible area. The
+// library's `viewDate` prop can't do it reliably: it resolves the date against stale
+// columns when the date range changes in the same render (first render, collapsed rows).
+// So we drive the library's own horizontal scrollbar, which it listens to via onScroll.
+function centerOnTodayLine(root: HTMLElement) {
+  const line = root.querySelector<SVGLineElement>('line.today-line');
+  // The library's scrollbar is the only horizontally scrollable element; the chart itself
+  // sits in an overflow-hidden container the library scrolls to match it.
+  const scrollbar = [...root.querySelectorAll<HTMLElement>('div')].find((div) =>
+    ['auto', 'scroll'].includes(getComputedStyle(div).overflowX),
+  );
+  const container = line?.ownerSVGElement?.parentElement?.parentElement;
+  if (!line || !scrollbar || !container) return;
+  const target = Math.max(0, Math.round(Number(line.getAttribute('x1')) - container.clientWidth / 2));
+  if (Math.abs(scrollbar.scrollLeft - target) > 1) {
+    scrollbar.scrollLeft = target;
+  } else if (Math.abs(container.scrollLeft - scrollbar.scrollLeft) > 1) {
+    // The library ignores every other scroll event: send it again until the chart follows.
+    scrollbar.dispatchEvent(new Event('scroll', { bubbles: true }));
+  }
+}
+
+const CENTERING_MS = 500;
+
 // "YYYY-MM-DD" → local midnight (new Date("YYYY-MM-DD") would be parsed as UTC).
 function parseDay(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
@@ -32,6 +93,37 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
   // Groups are collapsed unless expanded by the user: everything starts collapsed,
   // including groups that appear after a refresh.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const chartRef = useRef<HTMLDivElement>(null);
+  const columnWidth = COLUMN_WIDTHS[viewMode] ?? 120;
+  // The chart element only exists when there is something to show.
+  const hasTasks = data.length > 0;
+
+  // Draws the today line whenever the library re-renders its SVG.
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return;
+    const draw = () => drawTodayLine(element, viewMode);
+    draw();
+    const observer = new MutationObserver(draw);
+    observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'width', 'height'] });
+    return () => observer.disconnect();
+  }, [viewMode, hasTasks]);
+
+  // Centers on today when the chart appears and when the view mode changes. The library
+  // settles over a few renders, so keep centering for a short while.
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return;
+    let frame = requestAnimationFrame(function step() {
+      centerOnTodayLine(element);
+      frame = requestAnimationFrame(step);
+    });
+    const stop = setTimeout(() => cancelAnimationFrame(frame), CENTERING_MS);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(stop);
+    };
+  }, [viewMode, hasTasks]);
 
   const { tasks, urls } = useMemo(() => {
     const flatItems = flattenGanttTree(data);
@@ -60,6 +152,16 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
     });
     return { tasks, urls };
   }, [data, expanded]);
+
+  // The date range starts preStepsCount columns before the earliest visible item: make it
+  // start early enough to show today in the middle of the screen, even when every item is
+  // in the future.
+  const todayKey = new Date().toDateString();
+  const preStepsCount = useMemo(() => {
+    const halfScreen = Math.ceil(window.innerWidth / columnWidth / 2);
+    const latestStart = tasks.reduce((latest, t) => (t.start > latest ? t.start : latest), new Date(0));
+    return halfScreen + columnsBetween(new Date(), latestStart, viewMode) + 1;
+  }, [tasks, todayKey, viewMode, columnWidth]);
 
   const toggle = (task: Task) => {
     setExpanded((prev) => {
@@ -92,17 +194,21 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
         ))}
         <span className="hint">Double-click a bar to open the item in GitLab</span>
       </div>
-      <Gantt
-        tasks={tasks}
-        viewMode={viewMode}
-        listCellWidth="220px"
-        TaskListHeader={TaskListHeader}
-        TaskListTable={TaskListTable}
-        TooltipContent={TooltipContent}
-        columnWidth={viewMode === ViewMode.Month ? 200 : viewMode === ViewMode.Week ? 120 : 50}
-        onExpanderClick={toggle}
-        onDoubleClick={openInGitLab}
-      />
+      <div ref={chartRef} className="gantt-chart">
+        <Gantt
+          tasks={tasks}
+          viewMode={viewMode}
+          preStepsCount={preStepsCount}
+          todayColor="transparent"
+          listCellWidth={`${LIST_WIDTH}px`}
+          TaskListHeader={TaskListHeader}
+          TaskListTable={TaskListTable}
+          TooltipContent={TooltipContent}
+          columnWidth={columnWidth}
+          onExpanderClick={toggle}
+          onDoubleClick={openInGitLab}
+        />
+      </div>
     </div>
   );
 };

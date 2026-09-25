@@ -109,6 +109,8 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 - `YYYY-MM-DD` dates are parsed in **local** time (`parseDay`), not with `new Date(iso)` (UTC).
 - The list and the bar tooltip are our own components (`components/TaskList.tsx`, passed as `TaskListHeader` / `TaskListTable` / `TooltipContent`): the list shows only the item names; the dates are in the tooltip ("From … to …"). The e2e tests rely on the row structure: cell `div[title=name]` containing the `▶`/`▼` expander.
 - Bar labels (`svg text`) don't receive pointer events: in tests, hover a bar by moving the mouse onto its label's bounding box.
+- **Today line**: `gantt-task-react` can only fill today's whole column (`todayColor`, a whole week in Week view). We make that column transparent and `drawTodayLine` (in `GanttChart.tsx`) adds a `line.today-line` to the SVG at today's exact position inside the column (`columnFraction` in `utils/today.ts`). The library re-renders its SVG on its own, so a `MutationObserver` redraws the line.
+- **Centering on today**: done by `centerOnTodayLine`, which scrolls the library's own horizontal scrollbar (the only `overflow-x: auto` div) to put the line in the middle, for ~0.5 s after the chart appears and after each view-mode change. **Don't use the `viewDate` prop** for this: the library resolves it against stale columns when its date range changes in the same render (first render, collapsed rows), so the scroll lands in the wrong place. `preStepsCount` is sized so the range starts at least half a screen before today, even when every item is in the future.
 - Double-clicking a bar opens the item in GitLab.
 
 ## Tests
@@ -163,7 +165,8 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 
 ## Known limitations / ideas
 
-- The Gantt opens on the earliest date (often a past milestone) instead of today.
+- If today is after the end of every item (plus the library's padding: ~19 days in Day view, 1.5 months in Week view, the end of the year in Month view), there is no today line and no centering: the library can't extend its date range past the items.
+- The library sizes its grid over all tasks, hidden ones included: the today line (like the grid) may extend below the last visible row, clipped by the SVG.
 - The task list doesn't indent hierarchy levels (a `gantt-task-react` limitation).
 - An item without dates but attached to a milestone doesn't inherit the milestone's dates.
 - A cycle in the hierarchy (A parent of B, B parent of A) makes the involved items disappear.
