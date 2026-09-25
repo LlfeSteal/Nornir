@@ -129,6 +129,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 - **Go**: unit tests in `backend/internal/gitlab` (`buildGanttTree` takes an injected `now` to stay deterministic).
 - **Playwright**: in `frontend/e2e/` — **every new Playwright test is saved in the project**, never thrown away.
   - `*.mocked.spec.ts`: API mocked with `page.route`, datasets in `e2e/fixtures.ts` (`mockApi`, with an optional `delayMs`).
+  - Helpers that read the DOM once (`listRows`, `barFill`, `todayLinePosition`…) don't retry: after an action (expand, view change), wait with a web-first assertion (`toBeVisible`, `expect.poll`) for the expected state before calling them — otherwise the test is flaky under load.
   - Selectors use roles and labels: chevrons are buttons **Expand** / **Collapse**, view modes are `radio`s (**Day**, **Week**, **Month**, `aria-checked`), **Today** and **Refresh** are buttons, errors are `role="alert"`. Read sizes from the DOM (row height, today's column width) rather than hard-coding them.
   - Dark mode: `page.emulateMedia({ colorScheme: 'dark' })` (system appearance, used by Automatic), or pick **Light** / **Dark** in the **Appearance** menu (`menuitemradio`); the button exposes the choice as `data-appearance`.
   - `*.live.spec.ts`: tagged `@live`, real backend + real GitLab; assumes nothing about the group's content.

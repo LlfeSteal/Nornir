@@ -107,6 +107,8 @@ test.describe('Gantt (mocked API)', () => {
     await mockApi(page);
     await page.goto('/');
     await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+    // listRows() reads the DOM once: wait for the children to be rendered first.
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
 
     let rows = await listRows(page);
     let parent = rows.findIndex((r) => r.name === 'Main epic');
@@ -121,6 +123,7 @@ test.describe('Gantt (mocked API)', () => {
 
     // One more level: the nested epic's child comes right below it, further indented.
     await page.locator('.task-list-row[data-depth="1"]', { has: page.getByTitle('Child epic') }).getByRole('button', { name: 'Expand' }).click();
+    await expect(page.getByTitle('Deep issue')).toBeVisible();
     rows = await listRows(page);
     parent = rows.findIndex((r) => r.name === 'Child epic' && r.depth === 1);
     expect(rows[parent + 1]).toMatchObject({ name: 'Deep issue', depth: 2, last: true });
@@ -132,6 +135,7 @@ test.describe('Gantt (mocked API)', () => {
     await page.goto('/');
     const epicRow = page.getByTitle('Main epic').locator('..');
     await epicRow.getByRole('button', { name: 'Expand' }).click();
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
 
     const rows = await listRows(page);
     const child = rows.findIndex((r) => r.name === 'Standalone issue');
