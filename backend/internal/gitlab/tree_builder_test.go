@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -264,4 +265,72 @@ func TestItemAndAncestorInSameMilestone(t *testing.T) {
 	assertIDs(t, "milestone children", tree[0].Children, "cap_ms_cap", "feat_ms_feat")
 	assertIDs(t, "cap copy children", tree[0].Children[0].Children, "feat_ms_cap")
 	assertIDs(t, "roots", tree, "ms1", "top", "cap_root_cap", "feat_root_feat")
+}
+
+func weight(w int) WorkItemWidget {
+	return WorkItemWidget{Typename: typenameWeight, Type: "WEIGHT", Weight: &w}
+}
+
+// progressOf finds a task by ID in the tree.
+func progressOf(t *testing.T, tree []model.GanttTask, id string) float64 {
+	t.Helper()
+	var found *model.GanttTask
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for i := range tasks {
+			if tasks[i].ID == id {
+				found = &tasks[i]
+			}
+			walk(tasks[i].Children)
+		}
+	}
+	walk(tree)
+	if found == nil {
+		t.Fatalf("task %q not found", id)
+	}
+	return found.Progress
+}
+
+func TestProgressUsesWeights(t *testing.T) {
+	// Same shape as the real group: Feature 2 has two issues of 5 points (one closed),
+	// Feature 1 has three issues without weight (one closed), which count 1 point each.
+	tree := mustBuild(t, []WorkItemNode{
+		node("epic1", "Epic", "OPEN"),
+		node("cap2", "Epic", "OPEN", parent("epic1"), milestone("ms1", "")),
+		node("feat2", "Epic", "OPEN", parent("cap2")),
+		node("us2", "Issue", "CLOSED", parent("feat2"), weight(5)),
+		node("us1", "Issue", "OPEN", parent("feat2"), weight(5)),
+		node("feat1", "Epic", "OPEN", parent("cap2")),
+		node("us8", "Issue", "CLOSED", parent("feat1")),
+		node("us7", "Issue", "OPEN", parent("feat1")),
+		node("us6", "Issue", "OPEN", parent("feat1")),
+	}, nil)
+
+	cases := map[string]float64{
+		"feat2":        50,             // 5 / 10
+		"feat1":        100.0 / 3,      // 1 / 3
+		"cap2":         100.0 * 6 / 13, // (5 + 1) / (10 + 3)
+		"ms1":          100.0 * 6 / 13, // the milestone holds cap2's copy
+		"cap2_ms_cap2": 100.0 * 6 / 13,
+		"epic1":        100.0 * 6 / 13,
+		"us2":          100,
+		"us1":          0,
+	}
+	for id, want := range cases {
+		if got := progressOf(t, tree, id); math.Abs(got-want) > 1e-9 {
+			t.Errorf("%s progress = %v, want %v", id, got, want)
+		}
+	}
+}
+
+func TestProgressWithOnlyZeroWeightsCountsClosedItems(t *testing.T) {
+	tree := mustBuild(t, []WorkItemNode{
+		node("epic", "Epic", "OPEN"),
+		node("a", "Issue", "CLOSED", parent("epic"), weight(0)),
+		node("b", "Issue", "OPEN", parent("epic"), weight(0)),
+	}, nil)
+
+	if got := progressOf(t, tree, "epic"); got != 50 {
+		t.Fatalf("epic progress = %v, want 50", got)
+	}
 }

@@ -34,6 +34,7 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
           ... on WorkItemWidgetStartAndDueDate { startDate dueDate }
           ... on WorkItemWidgetMilestone { milestone { id title startDate dueDate webPath } }
           ... on WorkItemWidgetHierarchy { parent { id } }
+          ... on WorkItemWidgetWeight { weight }
         }
       }
     }

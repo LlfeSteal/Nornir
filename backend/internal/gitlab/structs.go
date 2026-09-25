@@ -55,6 +55,7 @@ type WorkItemWidget struct {
 	DueDate   string     `json:"dueDate,omitempty"`
 	Milestone *Milestone `json:"milestone,omitempty"`
 	Parent    *ParentRef `json:"parent,omitempty"`
+	Weight    *int       `json:"weight,omitempty"` // nil: no weight set in GitLab
 }
 
 type Milestone struct {
