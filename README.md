@@ -46,7 +46,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - Everything starts collapsed; the triangles expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
 - The chart opens centered on today, marked by a red line; switching between the Day / Week / Month views centers it again.
 - The list shows the item names; hover a bar to see its dates and progress.
-- Progress is the share of the weight (GitLab `weight`) of the closed issues under an item; issues without weight count as 1 point. For example, 2 issues of 5 points with one closed → 50%.
+- Progress is computed level by level: an item is at the mean of its direct children's progress, each weighted by its GitLab `weight` (1 point when it has none); a closed issue is at 100%. For example, 2 issues of 5 points with one closed → 50%; a capability with 3 unweighted features at 50%, 0% and 0% → 16.67%.
 - Double-click a bar to open the item in GitLab.
 - **Refresh** reloads from GitLab without waiting for the cache to expire.
 - Items without dates in GitLab are shown over 14 days starting today.

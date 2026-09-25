@@ -306,13 +306,14 @@ func TestProgressUsesWeights(t *testing.T) {
 		node("us6", "Issue", "OPEN", parent("feat1")),
 	}, nil)
 
+	capability := (50 + 100.0/3) / 2 // mean of its two unweighted features
 	cases := map[string]float64{
-		"feat2":        50,             // 5 / 10
-		"feat1":        100.0 / 3,      // 1 / 3
-		"cap2":         100.0 * 6 / 13, // (5 + 1) / (10 + 3)
-		"ms1":          100.0 * 6 / 13, // the milestone holds cap2's copy
-		"cap2_ms_cap2": 100.0 * 6 / 13,
-		"epic1":        100.0 * 6 / 13,
+		"feat2":        50,        // (5×100 + 5×0) / 10
+		"feat1":        100.0 / 3, // unweighted issues: 1 point each
+		"cap2":         capability,
+		"ms1":          capability, // the milestone holds cap2's copy only
+		"cap2_ms_cap2": capability,
+		"epic1":        capability,
 		"us2":          100,
 		"us1":          0,
 	}
@@ -323,7 +324,7 @@ func TestProgressUsesWeights(t *testing.T) {
 	}
 }
 
-func TestProgressWithOnlyZeroWeightsCountsClosedItems(t *testing.T) {
+func TestProgressWithOnlyZeroWeightsIsPlainMean(t *testing.T) {
 	tree := mustBuild(t, []WorkItemNode{
 		node("epic", "Epic", "OPEN"),
 		node("a", "Issue", "CLOSED", parent("epic"), weight(0)),
@@ -332,5 +333,32 @@ func TestProgressWithOnlyZeroWeightsCountsClosedItems(t *testing.T) {
 
 	if got := progressOf(t, tree, "epic"); got != 50 {
 		t.Fatalf("epic progress = %v, want 50", got)
+	}
+}
+
+func TestCapabilityAveragesItsFeaturesByWeight(t *testing.T) {
+	features := func(weights ...WorkItemWidget) []WorkItemNode {
+		nodes := []WorkItemNode{
+			node("cap", "Epic", "OPEN"),
+			node("f1", "Epic", "OPEN", append([]WorkItemWidget{parent("cap")}, weights[0])...),
+			node("f2", "Epic", "OPEN", append([]WorkItemWidget{parent("cap")}, weights[1])...),
+			node("f3", "Epic", "OPEN", append([]WorkItemWidget{parent("cap")}, weights[2])...),
+			// f1 is at 50%, f2 and f3 at 0%.
+			node("a", "Issue", "CLOSED", parent("f1")),
+			node("b", "Issue", "OPEN", parent("f1")),
+			node("c", "Issue", "OPEN", parent("f2")),
+			node("d", "Issue", "OPEN", parent("f3")),
+		}
+		return nodes
+	}
+	noWeight := WorkItemWidget{Typename: typenameWeight, Type: "WEIGHT"}
+
+	// Unweighted features count 1 each: 50 / 3.
+	if got := progressOf(t, mustBuild(t, features(noWeight, noWeight, noWeight), nil), "cap"); math.Abs(got-50.0/3) > 1e-9 {
+		t.Fatalf("unweighted features: cap progress = %v, want %v", got, 50.0/3)
+	}
+	// Feature weights 2, 1, 1: (2×50) / 4.
+	if got := progressOf(t, mustBuild(t, features(weight(2), weight(1), weight(1)), nil), "cap"); got != 25 {
+		t.Fatalf("weighted features: cap progress = %v, want 25", got)
 	}
 }

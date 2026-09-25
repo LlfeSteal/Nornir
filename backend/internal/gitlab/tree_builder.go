@@ -140,33 +140,29 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 	}
 
 	// Phase 2: recursive materialization.
-	// materialize also returns the progress totals of the leaves of the subtree.
-	var materialize func(id, suffix string, visiting map[string]bool) (model.GanttTask, progressTotals)
-	materialize = func(id, suffix string, visiting map[string]bool) (model.GanttTask, progressTotals) {
+	var materialize func(id, suffix string, visiting map[string]bool) model.GanttTask
+	materialize = func(id, suffix string, visiting map[string]bool) model.GanttTask {
 		item := items[id]
 		task := item.task
 		task.ID = id + suffix
 
-		var totals progressTotals
+		var weighted []weightedChild
 		visiting[id] = true
 		for _, childID := range hierarchyChildren[id] {
 			if visiting[childID] { // guard against a cycle in the data
 				continue
 			}
-			child, childTotals := materialize(childID, suffix, visiting)
+			child := materialize(childID, suffix, visiting)
 			task.Children = append(task.Children, child)
-			totals.add(childTotals)
+			weighted = append(weighted, weightedChild{progress: child.Progress, weight: items[childID].weight})
 		}
 		delete(visiting, id)
 
 		if len(task.Children) == 0 {
-			totals = leafTotals(item.closed, item.weight)
+			task.Progress = leafProgress(item.closed)
+		} else {
+			task.Progress = weightedProgress(weighted)
 		}
-		task.Progress = totals.progress()
-		return task, totals
-	}
-	materializeTask := func(id, suffix string) model.GanttTask {
-		task, _ := materialize(id, suffix, map[string]bool{})
 		return task
 	}
 
@@ -185,7 +181,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 	canonical := make([]string, 0)
 	for _, key := range milestoneOrder {
 		ms := *milestones[key]
-		var totals progressTotals
+		var weighted []weightedChild
 		for _, childID := range milestoneChildren[key] {
 			suffix := ""
 			if items[childID].hierarchyParentID != "" {
@@ -193,18 +189,18 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			} else {
 				canonical = append(canonical, childID)
 			}
-			child, childTotals := materialize(childID, suffix, map[string]bool{})
+			child := materialize(childID, suffix, map[string]bool{})
 			ms.Children = append(ms.Children, child)
-			totals.add(childTotals)
+			weighted = append(weighted, weightedChild{progress: child.Progress, weight: items[childID].weight})
 		}
-		ms.Progress = totals.progress()
+		ms.Progress = weightedProgress(weighted)
 		result = append(result, ms)
 	}
 	isRoot := make(map[string]bool, len(roots))
 	for _, id := range roots {
 		isRoot[id] = true
 		canonical = append(canonical, id)
-		result = append(result, materializeTask(id, ""))
+		result = append(result, materialize(id, "", map[string]bool{}))
 	}
 
 	// Every epic that is not already a root is also listed at the top level.
@@ -216,7 +212,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		}
 		seen[id] = true
 		if items[id].task.Type == model.TypeEpic && !isRoot[id] {
-			result = append(result, materializeTask(id, rootCopySuffix+lastSegment(id)))
+			result = append(result, materialize(id, rootCopySuffix+lastSegment(id), map[string]bool{}))
 		}
 		for _, childID := range hierarchyChildren[id] {
 			collectEpics(childID)
@@ -243,39 +239,38 @@ func lastSegment(id string) string {
 	return id[strings.LastIndex(id, "/")+1:]
 }
 
-// progressTotals sums the leaves of a subtree (items without children): progress is the
-// share of their weight that is closed. Items with children don't count themselves.
-type progressTotals struct {
-	doneWeight, totalWeight int
-	doneCount, totalCount   int
+// weightedChild is a direct child as seen by its parent's progress: its own progress and
+// its own weight.
+type weightedChild struct {
+	progress float64
+	weight   int
 }
 
-func leafTotals(closed bool, weight int) progressTotals {
-	t := progressTotals{totalWeight: weight, totalCount: 1}
+// leafProgress: an item without children is done when closed.
+func leafProgress(closed bool) float64 {
 	if closed {
-		t.doneWeight, t.doneCount = weight, 1
+		return 100
 	}
-	return t
+	return 0
 }
 
-func (t *progressTotals) add(other progressTotals) {
-	t.doneWeight += other.doneWeight
-	t.totalWeight += other.totalWeight
-	t.doneCount += other.doneCount
-	t.totalCount += other.totalCount
-}
-
-// progress in percent: closed weight / total weight, or closed leaves / leaves when
-// every leaf weighs 0; 0 without any leaf (e.g. an empty milestone).
-func (t progressTotals) progress() float64 {
-	switch {
-	case t.totalWeight > 0:
-		return 100 * float64(t.doneWeight) / float64(t.totalWeight)
-	case t.totalCount > 0:
-		return 100 * float64(t.doneCount) / float64(t.totalCount)
-	default:
+// weightedProgress is the mean of the children's progress, each weighted by its own
+// weight (e.g. a capability with 3 unweighted features at 50%, 0% and 0% is at 16.67%).
+// When every child weighs 0, it falls back to the plain mean; without children, 0.
+func weightedProgress(children []weightedChild) float64 {
+	if len(children) == 0 {
 		return 0
 	}
+	sum, totalWeight, plainSum := 0.0, 0, 0.0
+	for _, c := range children {
+		sum += c.progress * float64(c.weight)
+		totalWeight += c.weight
+		plainSum += c.progress
+	}
+	if totalWeight == 0 {
+		return plainSum / float64(len(children))
+	}
+	return sum / float64(totalWeight)
 }
 
 // extractWeight returns the GitLab weight of an item, defaultWeight when it has none.
