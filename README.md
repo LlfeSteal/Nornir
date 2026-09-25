@@ -49,7 +49,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - The chart opens centered on today, marked by a red line and a "Today" label; switching the time scale centers it again.
 - **Appearance** menu in the toolbar: Automatic (follows your system), Light or Dark — remembered in the browser.
 - The list shows the item names; hover a bar to see its dates and progress.
-- Closed items (issues, epics, milestones) are grayed out in the list and drawn hatched in gray on the timeline.
+- Closed items (issues, epics, milestones) are **hidden by default**; the **Closed** button in the toolbar shows them (remembered in the browser). Hiding a closed epic or milestone also hides its content. When shown, they are grayed out in the list and drawn hatched in gray on the timeline.
 - Epic and milestone bars are colored by schedule: **green** when the real progress is at or above the expected progress, **orange** when it is up to 5 points behind, **red** when it is more than 5 points behind. Issues are teal.
 - Epic and milestone bars have three layers: the planned period (transparent), the **expected** progress if the work advanced evenly between their start and end dates (semi-transparent), and the **real** progress (solid). When the solid part is shorter than the semi-transparent one, the item is behind schedule; the tooltip says by how much ("Expected 80% · 30% behind").
 - Progress is computed level by level: an item is at the mean of its direct children's progress, each weighted by its GitLab `weight` (1 point when it has none); a closed issue is at 100%. For example, 2 issues of 5 points with one closed → 50%; a capability with 3 unweighted features at 50%, 0% and 0% → 16.67%.

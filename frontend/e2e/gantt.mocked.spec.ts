@@ -62,7 +62,7 @@ test.describe('Gantt (mocked API)', () => {
     const groupLink = page.getByRole('link', { name: config.group });
     await expect(groupLink).toHaveAttribute('href', `${config.gitlabUrl}/${config.group}`);
 
-    for (const name of ['[Milestone] Sprint 1', '[Milestone] Empty sprint', 'Main epic']) {
+    for (const name of ['[Milestone] Sprint 1', 'Main epic']) {
       await expect(page.getByTitle(name).first()).toBeVisible();
     }
     // Everything starts collapsed: no child row is rendered.
@@ -527,6 +527,7 @@ test.describe('Gantt (mocked API)', () => {
     const nameColor = (name: string) => row(name).locator('.task-list-name').evaluate((el) => getComputedStyle(el).color);
 
     // The closed milestone: hatched bar, no schedule color nor linear layer, grayed name.
+    await page.getByRole('button', { name: 'Closed' }).click(); // closed items are hidden by default
     expect(await barFill(page, '[Milestone] Empty sprint')).toBe('url(#nornir-closed-hatch)');
     await expect(row('[Milestone] Empty sprint')).toHaveAttribute('data-closed', 'true');
     await expect(row('[Milestone] Empty sprint')).not.toHaveAttribute('data-schedule', /.+/);
@@ -539,7 +540,7 @@ test.describe('Gantt (mocked API)', () => {
     // A closed issue is hatched too, an open one keeps its color.
     await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Standalone issue')).toBeVisible();
-    expect(await barFill(page, 'Shared issue')).toBe('url(#nornir-closed-hatch)');
+    expect(await barFill(page, 'Done issue')).toBe('url(#nornir-closed-hatch)');
     expect(await barFill(page, 'Standalone issue')).not.toBe('url(#nornir-closed-hatch)');
 
     // The tooltip says it is closed, with its real progress.
@@ -550,5 +551,98 @@ test.describe('Gantt (mocked API)', () => {
     await expect(tooltip).toContainText('Closed');
     await expect(tooltip).toContainText('0% complete');
     await expect(tooltip).not.toContainText('Expected');
+  });
+
+  test.describe('closed items filter', () => {
+    const closedButton = (page: Page) => page.getByRole('button', { name: 'Closed' });
+
+    test('closed items are hidden by default and shown with the Closed button', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+      await expect(closedButton(page)).toHaveAttribute('aria-pressed', 'false');
+
+      await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+      await expect(page.getByTitle('Standalone issue')).toBeVisible();
+      await expect(page.getByTitle('Done issue')).toHaveCount(0);
+      await expect(page.getByTitle('[Milestone] Empty sprint')).toHaveCount(0);
+
+      await closedButton(page).click();
+      await expect(closedButton(page)).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTitle('Done issue')).toBeVisible();
+      await expect(page.getByTitle('[Milestone] Empty sprint')).toBeVisible();
+
+      await closedButton(page).click();
+      await expect(page.getByTitle('Done issue')).toHaveCount(0);
+      await expect(page.getByTitle('[Milestone] Empty sprint')).toHaveCount(0);
+    });
+
+    test('the choice is remembered', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await closedButton(page).click();
+      await expect(page.getByTitle('[Milestone] Empty sprint')).toBeVisible();
+
+      await page.reload();
+      await expect(page.getByTitle('[Milestone] Empty sprint')).toBeVisible();
+      await expect(closedButton(page)).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('a closed parent hides its whole subtree', async ({ page }) => {
+      await mockApi(page, {
+        body: [
+          {
+            id: 'E9', name: 'Closed epic', type: 'epic', closed: true, start: '2026-10-01', end: '2026-10-20', progress: 50, linearProgress: 0,
+            children: [{ id: 'I9', name: 'Open leftover', type: 'issue', start: '2026-10-01', end: '2026-10-05', progress: 0, linearProgress: 0 }],
+          },
+          { id: 'E8', name: 'Open epic', type: 'epic', start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 0 },
+        ],
+      });
+      await page.goto('/');
+      await expect(page.getByTitle('Open epic')).toBeVisible();
+      await expect(page.getByTitle('Closed epic')).toHaveCount(0);
+
+      await closedButton(page).click();
+      await page.getByTitle('Closed epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+      await expect(page.getByTitle('Open leftover')).toBeVisible();
+    });
+
+    test('showing closed items does not move the view', async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+      // The closed epic starts months earlier: showing it moves the start of the date range.
+      await mockApi(page, {
+        body: [
+          { id: 'E1', name: 'Current epic', type: 'epic', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 0 },
+          { id: 'E0', name: 'Old epic', type: 'epic', closed: true, start: '2026-05-01', end: '2026-06-15', progress: 100, linearProgress: 100 },
+        ],
+      });
+      await page.goto('/');
+      await expect(page.getByTitle('Current epic')).toBeVisible();
+      await page.waitForTimeout(700); // let the initial centering finish
+      const before = await todayLinePosition(page);
+      expect(Math.abs(before.offsetFromCenter)).toBeLessThanOrEqual(before.columnWidth);
+
+      await closedButton(page).click();
+      await expect(page.getByTitle('Old epic')).toBeVisible();
+      // Today stays where it was on screen, instead of the view jumping months back.
+      await expect
+        .poll(async () => Math.abs((await todayLinePosition(page)).offsetFromCenter - before.offsetFromCenter))
+        .toBeLessThanOrEqual(2);
+      await page.waitForTimeout(700);
+      const after = await todayLinePosition(page);
+      expect(Math.abs(after.offsetFromCenter - before.offsetFromCenter)).toBeLessThanOrEqual(2);
+    });
+
+    test('says so when everything is closed', async ({ page }) => {
+      await mockApi(page, {
+        body: [{ id: 'E7', name: 'Finished epic', type: 'epic', closed: true, start: '2026-10-01', end: '2026-10-20', progress: 100, linearProgress: 0 }],
+      });
+      await page.goto('/');
+      await expect(page.getByText('Everything is closed')).toBeVisible();
+
+      await page.getByRole('button', { name: 'Show closed items' }).click();
+      await expect(page.getByTitle('Finished epic')).toBeVisible();
+      await expect(page.getByText('Everything is closed')).toHaveCount(0);
+    });
   });
 });

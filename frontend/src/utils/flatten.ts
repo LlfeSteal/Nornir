@@ -43,3 +43,11 @@ export function visibleRows(flat: FlatGanttTask[], expanded: Set<string>): FlatG
     return visible;
   });
 }
+
+/** The tree without its closed items. A closed item's subtree goes with it: a closed epic
+ * or milestone is done. Purely visual: progress values still include closed items. */
+export function withoutClosed(nodes: GanttTask[]): GanttTask[] {
+  return nodes
+    .filter((node) => !node.closed)
+    .map((node) => (node.children ? { ...node, children: withoutClosed(node.children) } : node));
+}

@@ -97,7 +97,7 @@ function drawTodayPill(root: HTMLElement, x: number) {
 // library's `viewDate` prop can't do it reliably: it resolves the date against stale
 // columns when the date range changes in the same render (first render, collapsed rows).
 // So we drive the library's own horizontal scrollbar, which it listens to via onScroll.
-function centerOnTodayLine(root: HTMLElement) {
+function scrollParts(root: HTMLElement) {
   const line = root.querySelector<SVGLineElement>('line.today-line');
   // The library's scrollbar is the only horizontally scrollable element; the chart itself
   // sits in an overflow-hidden container the library scrolls to match it.
@@ -105,8 +105,17 @@ function centerOnTodayLine(root: HTMLElement) {
     ['auto', 'scroll'].includes(getComputedStyle(div).overflowX),
   );
   const container = line?.ownerSVGElement?.parentElement?.parentElement;
-  if (!line || !scrollbar || !container) return;
-  const target = Math.max(0, Math.round(Number(line.getAttribute('x1')) - container.clientWidth / 2));
+  return line && scrollbar && container ? { line, scrollbar, container } : null;
+}
+
+/** Scrolls so that the today line sits `offset` px from the left of the visible area
+ * (the middle when no offset is given). */
+function keepTodayLineAt(root: HTMLElement, offset?: number) {
+  const parts = scrollParts(root);
+  if (!parts) return;
+  const { line, scrollbar, container } = parts;
+  const want = offset ?? container.clientWidth / 2;
+  const target = Math.max(0, Math.round(Number(line.getAttribute('x1')) - want));
   if (Math.abs(scrollbar.scrollLeft - target) > 1) {
     scrollbar.scrollLeft = target;
   } else if (Math.abs(container.scrollLeft - scrollbar.scrollLeft) > 1) {
@@ -192,17 +201,21 @@ function markClosedBars(root: HTMLElement, rows: FlatGanttTask[]) {
 
 const CENTERING_MS = 500;
 
-/** Keeps centering on today for a short while, as the library settles over a few renders.
- * Returns a function that stops it. */
-function startCentering(root: HTMLElement): () => void {
+/** Keeps the today line at `offset` (see keepTodayLineAt) for a short while, as the library
+ * settles over a few renders. Returns a function that stops it. */
+function startKeepingTodayLine(root: HTMLElement, offset: number | undefined, onEnd: () => void): () => void {
   let frame = requestAnimationFrame(function step() {
-    centerOnTodayLine(root);
+    keepTodayLineAt(root, offset);
     frame = requestAnimationFrame(step);
   });
-  const stop = setTimeout(() => cancelAnimationFrame(frame), CENTERING_MS);
+  const stop = setTimeout(() => {
+    cancelAnimationFrame(frame);
+    onEnd();
+  }, CENTERING_MS);
   return () => {
     cancelAnimationFrame(frame);
     clearTimeout(stop);
+    onEnd();
   };
 }
 
@@ -222,20 +235,31 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
   // The chart element only exists when there is something to show.
   const hasTasks = data.length > 0;
 
-  // Centers on today when the chart appears and when the view mode changes. The library
-  // settles over a few renders, so keep centering for a short while.
-  useEffect(() => {
+  // One scroll loop at a time: centering on today, or keeping the view in place.
+  const scrollLoop = useRef<{ stop: () => void } | null>(null);
+  const keepTodayLine = useCallback((offset?: number) => {
+    scrollLoop.current?.stop();
     const element = chartRef.current;
-    return element ? startCentering(element) : undefined;
-  }, [viewMode, hasTasks]);
-
-  const stopManualCentering = useRef<() => void>();
-  const scrollToToday = useCallback(() => {
-    stopManualCentering.current?.();
-    if (chartRef.current) stopManualCentering.current = startCentering(chartRef.current);
+    if (!element) return;
+    const loop = {
+      stop: startKeepingTodayLine(element, offset, () => {
+        if (scrollLoop.current === loop) scrollLoop.current = null;
+      }),
+    };
+    scrollLoop.current = loop;
   }, []);
+  useEffect(() => () => scrollLoop.current?.stop(), []);
+
+  // Centers on today when the chart appears and when the view mode changes.
+  useEffect(() => {
+    keepTodayLine();
+  }, [viewMode, hasTasks, keepTodayLine]);
+
+  const scrollToToday = useCallback(() => keepTodayLine(), [keepTodayLine]);
   useImperativeHandle(ref, () => ({ scrollToToday }), [scrollToToday]);
-  useEffect(() => () => stopManualCentering.current?.(), []);
+
+  // Where the today line was last drawn, to notice when the date range changes.
+  const lastLine = useRef<{ x: number; viewMode: ViewMode } | null>(null);
 
   const { tasks, urls, rowInfo, shownRows } = useMemo(() => {
     const flatItems = flattenGanttTree(data);
@@ -285,7 +309,25 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
     const element = chartRef.current;
     if (!element) return;
     const draw = () => {
+      const before = scrollParts(element);
+      const previousX = before ? Number(before.line.getAttribute('x1')) : undefined;
       drawTodayLine(element, viewMode);
+      const after = scrollParts(element);
+      if (after) {
+        const x = Number(after.line.getAttribute('x1'));
+        // The library keeps its scroll in pixels: when its date range changes (rows shown or
+        // hidden, closed items toggled, refresh), the dates under the user's eye would shift.
+        // Keep the today line where it was on screen instead.
+        if (
+          previousX !== undefined &&
+          x !== previousX &&
+          lastLine.current?.viewMode === viewMode &&
+          !scrollLoop.current
+        ) {
+          keepTodayLine(previousX - after.container.scrollLeft);
+        }
+        lastLine.current = { x, viewMode };
+      }
       paintGroupBands(element, shownRows);
       paintLinearProgress(element, shownRows);
       markClosedBars(element, shownRows);
@@ -294,7 +336,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
     const observer = new MutationObserver(draw);
     observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'y', 'width', 'height', 'fill'] });
     return () => observer.disconnect();
-  }, [viewMode, hasTasks, shownRows]);
+  }, [viewMode, hasTasks, shownRows, keepTodayLine]);
 
   // The date range starts preStepsCount columns before the earliest visible item: make it
   // start early enough to show today in the middle of the screen, even when every item is

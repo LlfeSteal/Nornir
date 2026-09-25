@@ -26,10 +26,15 @@ export const ErrorBanner: React.FC<{ message: string; onRetry: () => void }> = (
   </div>
 );
 
-export const EmptyState: React.FC = () => (
+export const EmptyState: React.FC<{ title?: string; message?: string; action?: React.ReactNode }> = ({
+  title = 'No items in this group',
+  message = 'Epics, milestones and issues of the GitLab group will show up here.',
+  action,
+}) => (
   <div className="card empty-state">
     <TimelineIcon size={40} />
-    <strong>No items in this group</strong>
-    Epics, milestones and issues of the GitLab group will show up here.
+    <strong>{title}</strong>
+    {message}
+    {action && <div className="empty-state-action">{action}</div>}
   </div>
 );

@@ -4,7 +4,7 @@ import { AppConfig } from '../api/gantt';
 import { SegmentedControl } from './SegmentedControl';
 import { AppearanceMenu } from './AppearanceMenu';
 import { Appearance } from '../utils/appearance';
-import { RefreshIcon, TimelineIcon, TodayIcon } from './Icons';
+import { ClosedIcon, RefreshIcon, TimelineIcon, TodayIcon } from './Icons';
 
 export const VIEW_MODES: { label: string; value: ViewMode }[] = [
   { label: 'Day', value: ViewMode.Day },
@@ -23,6 +23,8 @@ interface Props {
   chartReady: boolean;
   appearance: Appearance;
   onAppearanceChange: (appearance: Appearance) => void;
+  showClosed: boolean;
+  onShowClosedChange: (show: boolean) => void;
 }
 
 const timeFormat: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
@@ -38,6 +40,8 @@ export const Toolbar: React.FC<Props> = ({
   chartReady,
   appearance,
   onAppearanceChange,
+  showClosed,
+  onShowClosedChange,
 }) => (
   <header className="toolbar">
     <div className="toolbar-title">
@@ -63,6 +67,16 @@ export const Toolbar: React.FC<Props> = ({
     </div>
     <div className="toolbar-actions">
       <SegmentedControl label="Time scale" options={VIEW_MODES} value={viewMode} onChange={onViewModeChange} />
+      <button
+        type="button"
+        className="button"
+        aria-pressed={showClosed}
+        title={showClosed ? 'Hide closed items' : 'Show closed items'}
+        onClick={() => onShowClosedChange(!showClosed)}
+      >
+        <ClosedIcon size={15} />
+        Closed
+      </button>
       <button type="button" className="button" onClick={onToday} disabled={!chartReady}>
         <TodayIcon size={15} />
         Today
