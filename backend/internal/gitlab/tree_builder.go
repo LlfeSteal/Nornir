@@ -78,6 +78,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			Start:  msStart,
 			End:    ensureEndAfterStart(msStart, fallbackDate(ms.DueDate, now, 30)),
 			WebURL: ms.WebURL,
+			Closed: ms.State == "closed",
 		}
 		milestones[key].LinearProgress = linearProgress(milestones[key].Start, milestones[key].End, now)
 		milestoneOrder = append(milestoneOrder, key)
@@ -107,6 +108,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		}
 
 		item.task.LinearProgress = linearProgress(start, end, now)
+		item.task.Closed = item.closed
 
 		if ms := extractMilestoneWidget(node.Widgets); ms != nil {
 			item.milestoneKey = milestoneKey(ms)

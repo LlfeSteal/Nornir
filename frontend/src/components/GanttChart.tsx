@@ -135,7 +135,7 @@ function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[]) {
   root.querySelectorAll<SVGRectElement>('._1KJ6x > rect._2RbVy').forEach((track) => {
     const row = rows[Math.floor(Number(track.getAttribute('y')) / ROW_HEIGHT)];
     let linear = track.parentElement!.querySelector<SVGRectElement>('rect.linear-progress');
-    if (!row || !(row.linearProgress > 0)) {
+    if (!row || row.closed || !(row.linearProgress > 0)) {
       linear?.remove();
       return;
     }
@@ -154,6 +154,39 @@ function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[]) {
       width: String(width),
       fill: track.getAttribute('fill') ?? 'currentColor',
     });
+  });
+}
+
+// Closed rows are drawn with a gray hatch, an SVG pattern defined once in the page (see
+// ClosedHatchPattern); bar colors are props, so the pattern is referenced by URL.
+const CLOSED_HATCH_ID = 'nornir-closed-hatch';
+const CLOSED_FILL = `url(#${CLOSED_HATCH_ID})`;
+
+function ClosedHatchPattern() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
+      <defs>
+        <pattern id={CLOSED_HATCH_ID} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="6" height="6" style={{ fill: 'var(--closed-bg)' }} />
+          <line x1="0" y1="0" x2="0" y2="6" style={{ stroke: 'var(--closed-stroke)', strokeWidth: 2.5 }} />
+        </pattern>
+      </defs>
+    </svg>
+  );
+}
+
+// Flags the bars of closed rows (data-closed on the library's task group, which also holds
+// the label), so the CSS can gray their label and keep the hatch readable.
+function markClosedBars(root: HTMLElement, rows: FlatGanttTask[]) {
+  root.querySelectorAll<SVGGElement>('._KxSXS, ._1KJ6x').forEach((bar) => {
+    const rect = bar.querySelector('rect');
+    const row = rect ? rows[Math.floor(Number(rect.getAttribute('y')) / ROW_HEIGHT)] : undefined;
+    const item = bar.parentElement!;
+    if (row?.closed) {
+      if (item.getAttribute('data-closed') !== 'true') item.setAttribute('data-closed', 'true');
+    } else if (item.hasAttribute('data-closed')) {
+      item.removeAttribute('data-closed');
+    }
   });
 }
 
@@ -226,10 +259,14 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
         name: item.name,
         id: item.id,
         type: isGroup ? 'project' : 'task',
-        progress: item.progress || 0,
+        // A closed row is drawn as one full hatched bar; its real progress stays in the
+        // tooltip (read from RowInfoContext).
+        progress: item.closed ? 100 : item.progress || 0,
         project: item.parent,
         hideChildren: isGroup ? !expanded.has(item.id) : undefined,
-        styles: isGroup
+        styles: item.closed
+          ? { backgroundColor: CLOSED_FILL, backgroundSelectedColor: CLOSED_FILL, progressColor: CLOSED_FILL, progressSelectedColor: CLOSED_FILL }
+          : isGroup
           ? // Groups: a tinted track (see theme.css) with the solid progress on top.
             { backgroundColor: color, backgroundSelectedColor: color, progressColor: color, progressSelectedColor: color }
           : {
@@ -251,6 +288,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
       drawTodayLine(element, viewMode);
       paintGroupBands(element, shownRows);
       paintLinearProgress(element, shownRows);
+      markClosedBars(element, shownRows);
     };
     draw();
     const observer = new MutationObserver(draw);
@@ -286,6 +324,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
 
   return (
     <div ref={chartRef} className="gantt-chart card">
+      <ClosedHatchPattern />
       <RowInfoContext.Provider value={rowInfo}>
         <Gantt
           tasks={tasks}

@@ -56,7 +56,8 @@ export const TaskListTable: React.FC<{
             data-depth={depth}
             data-parent-type={row?.parentType}
             data-expanded={expanded ? 'true' : undefined}
-            data-schedule={isGroup && row ? scheduleStatus(row.progress, row.linearProgress) : undefined}
+            data-schedule={isGroup && row && !row.closed ? scheduleStatus(row.progress, row.linearProgress) : undefined}
+            data-closed={row?.closed ? 'true' : undefined}
           >
             <div className="task-list-cell" style={{ width: rowWidth }} title={task.name}>
               {row?.guides.map((line, level) => (
@@ -88,11 +89,13 @@ export const TaskListTable: React.FC<{
 
 export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily: string }> = ({ task }) => {
   const row = useContext(RowInfoContext).get(task.id);
-  const progress = Math.round(task.progress);
+  // task.progress is forced to 100 for closed rows (full hatched bar): use the real one.
+  const progress = Math.round(row?.progress ?? task.progress);
+  const closed = !!row?.closed;
   // Epics and milestones also show their expected (linear) progress, drawn on their bar.
   const isGroup = task.type === 'project';
   const linear = row?.linearProgress ?? 0;
-  const status = isGroup ? scheduleStatus(task.progress, linear) : undefined;
+  const status = closed ? 'closed' : isGroup ? scheduleStatus(progress, linear) : undefined;
   return (
     <div className="gantt-tooltip" data-status={status}>
       <strong>{task.name}</strong>
@@ -100,13 +103,18 @@ export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily
         From {formatDay(task.start)} to {formatDay(task.end)}
       </p>
       <p>{progress}% complete</p>
-      {isGroup && (
+      {closed && (
+        <p className="schedule" data-status="closed">
+          <strong>Closed</strong>
+        </p>
+      )}
+      {isGroup && !closed && (
         <p className="schedule" data-status={status}>
-          Expected {Math.round(linear)}% · <strong>{scheduleLabel(task.progress, linear)}</strong>
+          Expected {Math.round(linear)}% · <strong>{scheduleLabel(progress, linear)}</strong>
         </p>
       )}
       <div className="progress-track">
-        {isGroup && <div className="progress-linear" style={{ width: `${Math.min(100, linear)}%` }} />}
+        {isGroup && !closed && <div className="progress-linear" style={{ width: `${Math.min(100, linear)}%` }} />}
         <div className="progress-value" style={{ width: `${progress}%` }} />
       </div>
     </div>

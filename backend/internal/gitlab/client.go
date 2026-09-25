@@ -32,7 +32,7 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
           __typename
           type
           ... on WorkItemWidgetStartAndDueDate { startDate dueDate }
-          ... on WorkItemWidgetMilestone { milestone { id title startDate dueDate webPath } }
+          ... on WorkItemWidgetMilestone { milestone { id title state startDate dueDate webPath } }
           ... on WorkItemWidgetHierarchy { parent { id } }
           ... on WorkItemWidgetWeight { weight }
         }
@@ -47,7 +47,7 @@ const milestonesQuery = `query GetGroupMilestones($fullPath: ID!, $afterCursor: 
     name
     milestones(first: 100, after: $afterCursor, includeAncestors: false) {
       pageInfo { hasNextPage endCursor }
-      nodes { id title startDate dueDate webPath }
+      nodes { id title state startDate dueDate webPath }
     }
   }
 }`

@@ -39,6 +39,8 @@ export const Legend: React.FC = () => (
         Expected
         <span className="legend-swatch track" />
         Planned
+        <span className="legend-swatch closed" />
+        Closed
       </span>
       <span className="legend-item">
         <span className="legend-line" />

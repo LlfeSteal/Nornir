@@ -408,3 +408,29 @@ func TestLinearProgressIsSetOnEveryRow(t *testing.T) {
 		}
 	}
 }
+
+func TestClosedItemsAndMilestonesAreFlagged(t *testing.T) {
+	tree := mustBuild(t, []WorkItemNode{
+		node("done", "Issue", "CLOSED", milestoneTitled("m-open", "Open sprint")),
+		node("todo", "Issue", "OPEN", milestoneTitled("m-open", "Open sprint")),
+	}, []Milestone{
+		{ID: "m-open", Title: "Open sprint", State: "active"},
+		{ID: "m-closed", Title: "Old sprint", State: "closed"},
+	})
+
+	closed := map[string]bool{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			closed[task.ID] = task.Closed
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+	want := map[string]bool{"done": true, "todo": false, "m-open": false, "m-closed": true}
+	for id, w := range want {
+		if closed[id] != w {
+			t.Errorf("%s closed = %v, want %v", id, closed[id], w)
+		}
+	}
+}

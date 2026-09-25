@@ -63,6 +63,7 @@ type Milestone struct {
 	Title     string `json:"title"`
 	StartDate string `json:"startDate,omitempty"`
 	DueDate   string `json:"dueDate,omitempty"`
+	State     string `json:"state"`   // "active" or "closed"
 	WebPath   string `json:"webPath"` // GitLab only exposes the relative path for milestones
 	WebURL    string `json:"-"`       // absolute URL, computed by the client from WebPath
 }

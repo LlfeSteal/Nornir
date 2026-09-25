@@ -20,5 +20,6 @@ type GanttTask struct {
 	// or behind schedule.
 	LinearProgress float64     `json:"linearProgress"`
 	WebURL         string      `json:"webUrl,omitempty"`
+	Closed         bool        `json:"closed,omitempty"`   // closed work item or milestone
 	Children       []GanttTask `json:"children,omitempty"` // Recursive structure
 }

@@ -517,4 +517,38 @@ test.describe('Gantt (mocked API)', () => {
     expect(await barFill(page, 'Five points behind')).toBe('#ff9500');
     expect(await barFill(page, 'Just over five')).toBe('#ff3b30');
   });
+
+  test('closed items are grayed out and hatched', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+    await mockApi(page);
+    await page.goto('/');
+    await expect(page.getByTitle('Main epic')).toBeVisible();
+    const row = (name: string) => page.locator('.task-list-row', { has: page.getByTitle(name) }).first();
+    const nameColor = (name: string) => row(name).locator('.task-list-name').evaluate((el) => getComputedStyle(el).color);
+
+    // The closed milestone: hatched bar, no schedule color nor linear layer, grayed name.
+    expect(await barFill(page, '[Milestone] Empty sprint')).toBe('url(#nornir-closed-hatch)');
+    await expect(row('[Milestone] Empty sprint')).toHaveAttribute('data-closed', 'true');
+    await expect(row('[Milestone] Empty sprint')).not.toHaveAttribute('data-schedule', /.+/);
+    expect(await nameColor('[Milestone] Empty sprint')).not.toBe(await nameColor('Main epic'));
+    const hasLinear = await page
+      .locator('svg text', { hasText: 'Empty sprint' })
+      .evaluate((label) => !!label.parentElement!.querySelector('rect.linear-progress'));
+    expect(hasLinear).toBe(false);
+
+    // A closed issue is hatched too, an open one keeps its color.
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
+    expect(await barFill(page, 'Shared issue')).toBe('url(#nornir-closed-hatch)');
+    expect(await barFill(page, 'Standalone issue')).not.toBe('url(#nornir-closed-hatch)');
+
+    // The tooltip says it is closed, with its real progress.
+    // Hover the start of the bar: its label (centered) may be beyond the visible area.
+    const bar = (await page.locator('svg text', { hasText: 'Empty sprint' }).locator('xpath=..').locator('rect').first().boundingBox())!;
+    await page.mouse.move(bar.x + 10, bar.y + bar.height / 2);
+    const tooltip = page.locator('.gantt-tooltip');
+    await expect(tooltip).toContainText('Closed');
+    await expect(tooltip).toContainText('0% complete');
+    await expect(tooltip).not.toContainText('Expected');
+  });
 });

@@ -4,20 +4,21 @@ export const config = { group: 'demo/group', gitlabUrl: 'https://gitlab.example.
 
 // Representative tree, shaped like the backend output: a milestone holding the `_ms_` copy
 // of an issue, an empty milestone, an epic holding the original issue and a nested epic,
-// and the top-level `_root_` copy of that nested epic.
+// and the top-level `_root_` copy of that nested epic. The empty sprint and the shared
+// issue are closed.
 export const tree = [
   {
     id: 'M1', name: '[Milestone] Sprint 1', type: 'milestone', start: '2026-10-01', end: '2026-10-31',
     progress: 50, linearProgress: 20, // ahead of schedule webUrl: 'https://gitlab.example.com/m1',
     children: [
-      { id: 'I1_ms_I1', name: 'Shared issue', type: 'issue', start: '2026-10-02', end: '2026-10-10', progress: 100, linearProgress: 0, webUrl: 'https://gitlab.example.com/i1' },
+      { id: 'I1_ms_I1', name: 'Shared issue', type: 'issue', closed: true, start: '2026-10-02', end: '2026-10-10', progress: 100, linearProgress: 0, webUrl: 'https://gitlab.example.com/i1' },
     ],
   },
-  { id: 'M2', name: '[Milestone] Empty sprint', type: 'milestone', start: '2026-11-01', end: '2026-11-30', progress: 0, linearProgress: 0 },
+  { id: 'M2', name: '[Milestone] Empty sprint', type: 'milestone', closed: true, start: '2026-11-01', end: '2026-11-30', progress: 0, linearProgress: 0 },
   {
     id: 'E1', name: 'Main epic', type: 'epic', start: '2026-10-01', end: '2026-12-01', progress: 50, linearProgress: 80, // behind schedule
     children: [
-      { id: 'I1', name: 'Shared issue', type: 'issue', start: '2026-10-02', end: '2026-10-10', progress: 100, linearProgress: 0 },
+      { id: 'I1', name: 'Shared issue', type: 'issue', closed: true, start: '2026-10-02', end: '2026-10-10', progress: 100, linearProgress: 0 },
       { id: 'I2', name: 'Standalone issue', type: 'issue', start: '2026-10-15', end: '2026-10-25', progress: 0, linearProgress: 0 },
       {
         id: 'E2', name: 'Child epic', type: 'epic', start: '2026-11-01', end: '2026-11-20', progress: 0, linearProgress: 3, // slightly behind
