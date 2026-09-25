@@ -104,7 +104,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 ## Frontend
 
 - `flattenGanttTree` yields a list where each parent precedes its children: `gantt-task-react` requires it.
-- Any item with children (and every milestone) is a collapsible `project`; leaves are `task`s. Collapsing is held in `GanttChart`'s `collapsed` state.
+- Any item with children (and every milestone) is a collapsible `project`; leaves are `task`s. Everything starts **collapsed**: `GanttChart` only tracks the `expanded` set, so groups that appear after a refresh are collapsed too. `App` keeps the chart mounted during a refresh so expanded rows survive it.
 - `YYYY-MM-DD` dates are parsed in **local** time (`parseDay`), not with `new Date(iso)` (UTC).
 - Double-clicking a bar opens the item in GitLab.
 
@@ -115,6 +115,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
   - `*.mocked.spec.ts`: API mocked with `page.route`, datasets in `e2e/fixtures.ts` (`mockApi`).
   - `*.live.spec.ts`: tagged `@live`, real backend + real GitLab; assumes nothing about the group's content.
   - Default target: the docker stack (`http://localhost`), override with `BASE_URL`.
+  - **The docker stack serves the last *built image*, not your working tree.** To run the mocked tests against current code without rebuilding the image: `npm run build && npx vite preview --port 4173` then `BASE_URL=http://localhost:4173 npm run test:e2e:mocked` (the API is mocked, no backend needed). The `@live` test needs the stack rebuilt: `docker compose up -d --build`.
 
 ## Development environment
 
@@ -143,7 +144,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 ### Before committing
 
 1. `cd backend && go vet ./... && go test ./...`
-2. `cd frontend && npm run build && npm run test:e2e:mocked`
+2. `cd frontend && npm run build && npm run test:e2e:mocked` (against a fresh build — see Tests)
 3. If the GitLab client or GraphQL queries changed: `npm run test:e2e` (includes `@live`) with the stack running.
 
 ### Documentation

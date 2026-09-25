@@ -41,7 +41,8 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 
 ## Usage
 
-- Day / Week / Month views; the triangles collapse an epic or a milestone.
+- Everything starts collapsed; the triangles expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
+- Day / Week / Month views.
 - Double-click a bar to open the item in GitLab.
 - **Refresh** reloads from GitLab without waiting for the cache to expire.
 - Items without dates in GitLab are shown over 14 days starting today.

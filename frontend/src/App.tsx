@@ -47,7 +47,8 @@ export const App: React.FC = () => {
       </div>
       {loading && <p>Loading…</p>}
       {error && <p className="error">Error: {error}</p>}
-      {data && !loading && <GanttChart data={data} />}
+      {/* Kept mounted during a refresh so the expanded rows are preserved. */}
+      {data && <GanttChart data={data} />}
     </main>
   );
 };

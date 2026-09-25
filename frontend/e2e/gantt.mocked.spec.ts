@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { config, mockApi } from './fixtures';
 
 test.describe('Gantt (mocked API)', () => {
-  test('shows the configured group and every row', async ({ page }) => {
+  test('shows the configured group and only the collapsed top-level rows', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
 
@@ -11,25 +11,30 @@ test.describe('Gantt (mocked API)', () => {
     const groupLink = page.getByRole('link', { name: config.group });
     await expect(groupLink).toHaveAttribute('href', `${config.gitlabUrl}/${config.group}`);
 
-    for (const name of ['[Milestone] Sprint 1', '[Milestone] Empty sprint', 'Main epic', 'Standalone issue']) {
+    for (const name of ['[Milestone] Sprint 1', '[Milestone] Empty sprint', 'Main epic']) {
       await expect(page.getByTitle(name).first()).toBeVisible();
     }
-    // The issue attached to both the epic and the milestone appears twice.
-    await expect(page.getByTitle('Shared issue')).toHaveCount(2);
+    // Everything starts collapsed: no child row is rendered.
+    await expect(page.getByTitle('Shared issue')).toHaveCount(0);
+    await expect(page.getByTitle('Standalone issue')).toHaveCount(0);
   });
 
-  test('collapsing an epic hides its children', async ({ page }) => {
+  test('expanding and collapsing a group shows and hides its children', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
-    await expect(page.getByTitle('Standalone issue')).toBeVisible();
 
     const epicRow = page.getByTitle('Main epic').locator('..');
+    await epicRow.getByText('▶').click();
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
+    await expect(page.getByTitle('Shared issue')).toHaveCount(1);
+
+    // The issue attached to both the epic and the milestone also shows up under the milestone.
+    await page.getByTitle('[Milestone] Sprint 1').locator('..').getByText('▶').click();
+    await expect(page.getByTitle('Shared issue')).toHaveCount(2);
+
     await epicRow.getByText('▼').click();
     await expect(page.getByTitle('Standalone issue')).toHaveCount(0);
     await expect(page.getByTitle('Shared issue')).toHaveCount(1); // the copy under the milestone remains
-
-    await epicRow.getByText('▶').click();
-    await expect(page.getByTitle('Standalone issue')).toBeVisible();
   });
 
   test('switches view mode', async ({ page }) => {
@@ -42,15 +47,19 @@ test.describe('Gantt (mocked API)', () => {
     }
   });
 
-  test('Refresh bypasses the cache', async ({ page }) => {
+  test('Refresh bypasses the cache and keeps expanded rows', async ({ page }) => {
     const calls = await mockApi(page);
     await page.goto('/');
     await expect(page.getByTitle('Main epic')).toBeVisible();
     expect(calls.at(-1)).not.toContain('refresh=1');
 
+    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
+
     await page.getByRole('button', { name: 'Refresh' }).click();
     await expect.poll(() => calls.at(-1)).toContain('refresh=1');
-    await expect(page.getByTitle('Main epic')).toBeVisible();
+    // The rows expanded before the refresh stay expanded.
+    await expect(page.getByTitle('Standalone issue')).toBeVisible();
   });
 
   test('shows the backend error', async ({ page }) => {

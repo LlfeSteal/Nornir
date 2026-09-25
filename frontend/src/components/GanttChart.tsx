@@ -28,7 +28,9 @@ function parseDay(iso: string): Date {
 
 export const GanttChart: React.FC<Props> = ({ data }) => {
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Groups are collapsed unless expanded by the user: everything starts collapsed,
+  // including groups that appear after a refresh.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { tasks, urls } = useMemo(() => {
     const flatItems = flattenGanttTree(data);
@@ -46,7 +48,7 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
         type: isGroup ? 'project' : 'task',
         progress: item.progress || 0,
         project: item.parent,
-        hideChildren: isGroup ? collapsed.has(item.id) : undefined,
+        hideChildren: isGroup ? !expanded.has(item.id) : undefined,
         styles: {
           backgroundColor: color,
           backgroundSelectedColor: '#2b6cb0',
@@ -56,10 +58,10 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
       };
     });
     return { tasks, urls };
-  }, [data, collapsed]);
+  }, [data, expanded]);
 
   const toggle = (task: Task) => {
-    setCollapsed((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(task.id)) next.delete(task.id);
       else next.add(task.id);
