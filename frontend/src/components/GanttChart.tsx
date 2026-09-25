@@ -1,20 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Gantt, Task, ViewMode } from 'gantt-task-react';
 import 'gantt-task-react/dist/index.css';
-import { GanttTask, GanttTaskType } from '../types/gantt';
-import { flattenGanttTree } from '../utils/flatten';
-import { TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
+import { GanttTask } from '../types/gantt';
+import { FlatGanttTask, flattenGanttTree, visibleRows } from '../utils/flatten';
+import { RowInfoContext, TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
 import { columnFraction, columnsBetween } from '../utils/today';
+import { groupBand, lighten, TYPE_COLORS } from '../utils/colors';
 
 interface Props {
   data: GanttTask[];
 }
 
-const COLORS: Record<GanttTaskType, string> = {
-  milestone: '#6b46c1',
-  epic: '#3182ce',
-  issue: '#38a169',
-};
+const ROW_HEIGHT = 50; // px, gantt-task-react's default rowHeight
+const CHILD_BAR_LIGHTEN = 0.35; // bars below the top level are drawn lighter
 
 const VIEW_MODES: { label: string; mode: ViewMode }[] = [
   { label: 'Day', mode: ViewMode.Day },
@@ -80,6 +78,17 @@ function centerOnTodayLine(root: HTMLElement) {
   }
 }
 
+// Tints the timeline rows that sit inside an expanded group, like the list rows. The
+// library draws one `g.rows rect` per task, hidden ones included, at y = index × rowHeight:
+// the visible row at index i lines up with the rect at that y.
+function paintGroupBands(root: HTMLElement, rows: FlatGanttTask[]) {
+  root.querySelectorAll<SVGRectElement>('g.rows rect').forEach((rect) => {
+    const row = rows[Math.round(Number(rect.getAttribute('y')) / ROW_HEIGHT)];
+    const fill = row?.parentType ? groupBand(row.parentType) : '';
+    if (rect.style.fill !== fill) rect.style.fill = fill;
+  });
+}
+
 const CENTERING_MS = 500;
 
 // "YYYY-MM-DD" → local midnight (new Date("YYYY-MM-DD") would be parsed as UTC).
@@ -98,17 +107,6 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
   // The chart element only exists when there is something to show.
   const hasTasks = data.length > 0;
 
-  // Draws the today line whenever the library re-renders its SVG.
-  useEffect(() => {
-    const element = chartRef.current;
-    if (!element) return;
-    const draw = () => drawTodayLine(element, viewMode);
-    draw();
-    const observer = new MutationObserver(draw);
-    observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'width', 'height'] });
-    return () => observer.disconnect();
-  }, [viewMode, hasTasks]);
-
   // Centers on today when the chart appears and when the view mode changes. The library
   // settles over a few renders, so keep centering for a short while.
   useEffect(() => {
@@ -125,12 +123,14 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
     };
   }, [viewMode, hasTasks]);
 
-  const { tasks, urls } = useMemo(() => {
+  const { tasks, urls, rowInfo, shownRows } = useMemo(() => {
     const flatItems = flattenGanttTree(data);
     const urls = new Map<string, string>();
+    const rowInfo = new Map(flatItems.map((item) => [item.id, item]));
     const tasks: Task[] = flatItems.map((item) => {
       if (item.webUrl) urls.set(item.id, item.webUrl);
-      const color = COLORS[item.type];
+      // Children are drawn lighter than the top-level bars they belong to.
+      const shade = (color: string) => (item.depth > 0 ? lighten(color, CHILD_BAR_LIGHTEN) : color);
       // Any item with children becomes a collapsible "project".
       const isGroup = item.type === 'milestone' || item.hasChildren;
       return {
@@ -143,15 +143,29 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
         project: item.parent,
         hideChildren: isGroup ? !expanded.has(item.id) : undefined,
         styles: {
-          backgroundColor: color,
-          backgroundSelectedColor: '#2b6cb0',
+          backgroundColor: shade(TYPE_COLORS[item.type]),
+          backgroundSelectedColor: shade('#2b6cb0'),
           progressColor: '#1a202c55',
           progressSelectedColor: '#1a202c88',
         },
       };
     });
-    return { tasks, urls };
+    return { tasks, urls, rowInfo, shownRows: visibleRows(flatItems, expanded) };
   }, [data, expanded]);
+
+  // Draws the today line and the group bands whenever the library re-renders its SVG.
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return;
+    const draw = () => {
+      drawTodayLine(element, viewMode);
+      paintGroupBands(element, shownRows);
+    };
+    draw();
+    const observer = new MutationObserver(draw);
+    observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'y', 'width', 'height'] });
+    return () => observer.disconnect();
+  }, [viewMode, hasTasks, shownRows]);
 
   // The date range starts preStepsCount columns before the earliest visible item: make it
   // start early enough to show today in the middle of the screen, even when every item is
@@ -195,19 +209,21 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
         <span className="hint">Double-click a bar to open the item in GitLab</span>
       </div>
       <div ref={chartRef} className="gantt-chart">
-        <Gantt
-          tasks={tasks}
-          viewMode={viewMode}
-          preStepsCount={preStepsCount}
-          todayColor="transparent"
-          listCellWidth={`${LIST_WIDTH}px`}
-          TaskListHeader={TaskListHeader}
-          TaskListTable={TaskListTable}
-          TooltipContent={TooltipContent}
-          columnWidth={columnWidth}
-          onExpanderClick={toggle}
-          onDoubleClick={openInGitLab}
-        />
+        <RowInfoContext.Provider value={rowInfo}>
+          <Gantt
+            tasks={tasks}
+            viewMode={viewMode}
+            preStepsCount={preStepsCount}
+            todayColor="transparent"
+            listCellWidth={`${LIST_WIDTH}px`}
+            TaskListHeader={TaskListHeader}
+            TaskListTable={TaskListTable}
+            TooltipContent={TooltipContent}
+            columnWidth={columnWidth}
+            onExpanderClick={toggle}
+            onDoubleClick={openInGitLab}
+          />
+        </RowInfoContext.Provider>
       </div>
     </div>
   );

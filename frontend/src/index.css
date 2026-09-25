@@ -35,3 +35,15 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .gantt-tooltip p { margin: 4px 0 0; color: #4a5568; }
 .today-line { stroke: #e53e3e; stroke-width: 2; pointer-events: none; }
+/* Tree of expanded groups: connectors, band in the parent's color, bold expanded parent */
+.task-list-row[data-parent-type] {
+  background: var(--group-band);
+  box-shadow: inset 3px 0 0 var(--group-color);
+}
+.task-list-row[data-expanded] .task-list-name { font-weight: 600; }
+.tree-guide, .tree-branch { position: relative; flex: none; width: 16px; align-self: stretch; }
+.tree-guide.line::before, .tree-branch::before {
+  content: ''; position: absolute; left: 7px; top: 0; bottom: 0; border-left: 1px solid #a0aec0;
+}
+.tree-branch.last::before { bottom: 50%; }
+.tree-branch::after { content: ''; position: absolute; left: 7px; right: 2px; top: 50%; border-top: 1px solid #a0aec0; }

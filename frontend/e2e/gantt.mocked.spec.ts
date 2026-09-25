@@ -17,6 +17,34 @@ async function todayLinePosition(page: Page) {
   };
 }
 
+/** Visible list rows, in order: name, tree depth and whether it is its parent's last child. */
+async function listRows(page: Page) {
+  return page.locator('.task-list-row').evaluateAll((rows) =>
+    rows.map((row) => ({
+      name: row.querySelector('.task-list-cell')!.getAttribute('title')!,
+      depth: Number(row.getAttribute('data-depth')),
+      last: !!row.querySelector('.tree-branch.last'),
+      nameX: row.querySelector('.task-list-name')!.getBoundingClientRect().x,
+      background: getComputedStyle(row).backgroundColor,
+    })),
+  );
+}
+
+/** Fill of the bar whose label is `name` (the first one when the name is repeated). */
+async function barFill(page: Page, name: string, nth = 0) {
+  return page
+    .locator('svg text', { hasText: name })
+    .nth(nth)
+    .evaluate((label) => label.parentElement!.querySelector('rect')!.getAttribute('fill')!);
+}
+
+function luminance(hex: string) {
+  const value = parseInt(hex.slice(1), 16);
+  return 0.2126 * ((value >> 16) & 255) + 0.7152 * ((value >> 8) & 255) + 0.0722 * (value & 255);
+}
+
+const EPIC_BAND = 'rgba(49, 130, 206, 0.1)'; // epic color #3182ce at 10%
+
 test.describe('Gantt (mocked API)', () => {
   test('shows the configured group and only the collapsed top-level rows', async ({ page }) => {
     await mockApi(page);
@@ -66,6 +94,62 @@ test.describe('Gantt (mocked API)', () => {
     await epicRow.getByText('▼').click();
     await expect(page.getByTitle('Standalone issue')).toHaveCount(0);
     await expect(page.getByTitle('Shared issue')).toHaveCount(1); // the copy under the milestone remains
+  });
+
+  test('expanded children are indented right below their parent, with tree connectors', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/');
+    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+
+    let rows = await listRows(page);
+    let parent = rows.findIndex((r) => r.name === 'Main epic');
+    expect(rows.slice(parent + 1, parent + 4).map((r) => [r.name, r.depth, r.last])).toEqual([
+      ['Shared issue', 1, false],
+      ['Standalone issue', 1, false],
+      ['Child epic', 1, true],
+    ]);
+    expect(rows[parent + 1].nameX).toBeGreaterThan(rows[parent].nameX);
+    // The top-level copy of the nested epic stays at depth 0, after the group.
+    expect(rows.filter((r) => r.name === 'Child epic').map((r) => r.depth)).toEqual([1, 0]);
+
+    // One more level: the nested epic's child comes right below it, further indented.
+    await page.locator('.task-list-row[data-depth="1"]', { has: page.getByTitle('Child epic') }).getByText('▶').click();
+    rows = await listRows(page);
+    parent = rows.findIndex((r) => r.name === 'Child epic' && r.depth === 1);
+    expect(rows[parent + 1]).toMatchObject({ name: 'Deep issue', depth: 2, last: true });
+    expect(rows[parent + 1].nameX).toBeGreaterThan(rows[parent].nameX);
+  });
+
+  test("rows of an expanded group are tinted in the group's color, in the list and the timeline", async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/');
+    const epicRow = page.getByTitle('Main epic').locator('..');
+    await epicRow.getByText('▶').click();
+
+    const rows = await listRows(page);
+    const child = rows.findIndex((r) => r.name === 'Standalone issue');
+    expect(rows[child].background).toBe(EPIC_BAND);
+    expect(rows.find((r) => r.name === 'Main epic')!.background).not.toBe(EPIC_BAND);
+
+    // Timeline rows are 50 px high: the child's row is the grid rect at its index.
+    const timelineRow = page.locator(`g.rows rect[y="${child * 50}"]`);
+    await expect.poll(() => timelineRow.evaluate((rect) => (rect as SVGRectElement).style.fill)).toBe(EPIC_BAND);
+
+    await epicRow.getByText('▼').click();
+    await expect.poll(() => timelineRow.evaluate((rect) => (rect as SVGRectElement).style.fill)).not.toBe(EPIC_BAND);
+  });
+
+  test('child bars are lighter than top-level bars', async ({ page }) => {
+    await mockApi(page);
+    await page.goto('/');
+    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await expect(page.locator('svg text', { hasText: 'Child epic' })).toHaveCount(2);
+
+    // Same type (epic): the nested one (first, under Main epic) vs its top-level copy.
+    const nested = await barFill(page, 'Child epic', 0);
+    const topLevel = await barFill(page, 'Child epic', 1);
+    expect(luminance(nested)).toBeGreaterThan(luminance(topLevel));
+    expect(topLevel).toBe(await barFill(page, 'Main epic'));
   });
 
   test('the list only shows item names', async ({ page }) => {

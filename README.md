@@ -43,6 +43,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 
 - Milestones list the work items whose milestone has the same title (milestones with the same title in several projects make one row).
 - Every epic is also listed at the top level, on top of its place under its parent epic.
+- Expanded children appear right below their parent, indented with tree lines, on a band in the parent's color (purple for a milestone, blue for an epic), with lighter bars than the top-level rows.
 - Everything starts collapsed; the triangles expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
 - The chart opens centered on today, marked by a red line; switching between the Day / Week / Month views centers it again.
 - The list shows the item names; hover a bar to see its dates and progress.
