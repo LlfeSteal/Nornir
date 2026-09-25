@@ -13,7 +13,7 @@ test.describe('Gantt (real backend) @live', () => {
     expect((await ganttResponse).status()).toBe(200);
 
     await expect(page.getByRole('link', { name: group })).toBeVisible();
-    await expect(page.locator('.error')).toHaveCount(0);
-    await expect(page.locator('.gantt')).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.locator('.gantt-chart')).toBeVisible();
   });
 });

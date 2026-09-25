@@ -21,7 +21,12 @@ export async function fetchGantt(refresh = false): Promise<GanttTask[]> {
 export function errorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
     const apiError = (err.response?.data as { error?: string } | undefined)?.error;
-    return apiError ?? err.message;
+    if (apiError) return apiError;
+    // No answer from the backend itself (nginx 502/503/504, or no response at all).
+    if (!err.response || [502, 503, 504].includes(err.response.status)) {
+      return 'The Nornir server is not responding. Check that the backend is running.';
+    }
+    return err.message;
   }
   return err instanceof Error ? err.message : String(err);
 }

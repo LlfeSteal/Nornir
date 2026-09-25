@@ -1,7 +1,7 @@
 import React, { createContext, useContext } from 'react';
 import { Task } from 'gantt-task-react';
 import { FlatGanttTask } from '../utils/flatten';
-import { groupBand, TYPE_COLORS } from '../utils/colors';
+import { ChevronIcon } from './Icons';
 
 // Replacements for gantt-task-react's list and tooltip: the list shows only the item
 // names (no From/To columns), and the dates move to the tooltip shown on a bar.
@@ -21,8 +21,8 @@ export const TaskListHeader: React.FC<{
   rowWidth: string;
   fontFamily: string;
   fontSize: string;
-}> = ({ headerHeight, rowWidth, fontFamily, fontSize }) => (
-  <div className="task-list-header" style={{ height: headerHeight - 2, width: rowWidth, fontFamily, fontSize }}>
+}> = ({ headerHeight, rowWidth }) => (
+  <div className="task-list-header" style={{ height: headerHeight, width: rowWidth }}>
     Name
   </div>
 );
@@ -37,40 +37,44 @@ export const TaskListTable: React.FC<{
   selectedTaskId: string;
   setSelectedTask: (taskId: string) => void;
   onExpanderClick: (task: Task) => void;
-}> = ({ rowHeight, rowWidth, fontFamily, fontSize, tasks, onExpanderClick }) => {
+}> = ({ rowHeight, rowWidth, tasks, onExpanderClick }) => {
   const rows = useContext(RowInfoContext);
   return (
-    <div className="task-list" style={{ fontFamily, fontSize }}>
+    <div className="task-list">
       {tasks.map((task) => {
-        // hideChildren is only defined on groups: undefined means a leaf, without expander.
-        const expander = task.hideChildren === undefined ? '' : task.hideChildren ? '▶' : '▼';
         const row = rows.get(task.id);
         const depth = row?.depth ?? 0;
-        // Rows inside an expanded group are tinted in the group's color.
-        const groupStyle = row?.parentType
-          ? ({ '--group-color': TYPE_COLORS[row.parentType], '--group-band': groupBand(row.parentType) } as React.CSSProperties)
-          : {};
+        // hideChildren is only defined on groups: undefined means a leaf, without chevron.
+        const isGroup = task.hideChildren !== undefined;
+        const expanded = task.hideChildren === false;
         return (
           <div
             key={task.id}
             className="task-list-row"
-            style={{ height: rowHeight, ...groupStyle }}
+            style={{ height: rowHeight }}
             data-depth={depth}
             data-parent-type={row?.parentType}
-            data-expanded={task.hideChildren === false ? 'true' : undefined}
+            data-expanded={expanded ? 'true' : undefined}
           >
             <div className="task-list-cell" style={{ width: rowWidth }} title={task.name}>
-              {/* Tree connectors, drawn in CSS so they join from row to row. */}
               {row?.guides.map((line, level) => (
                 <span key={level} className={line ? 'tree-guide line' : 'tree-guide'} />
               ))}
               {depth > 0 && <span className={row?.isLast ? 'tree-branch last' : 'tree-branch'} />}
-              <div
-                className={expander ? 'task-list-expander' : 'task-list-expander empty'}
-                onClick={() => expander && onExpanderClick(task)}
-              >
-                {expander}
-              </div>
+              {isGroup ? (
+                <button
+                  type="button"
+                  className="chevron"
+                  aria-label={expanded ? 'Collapse' : 'Expand'}
+                  aria-expanded={expanded}
+                  onClick={() => onExpanderClick(task)}
+                >
+                  <ChevronIcon size={12} />
+                </button>
+              ) : (
+                <span className="chevron-spacer" />
+              )}
+              {row && <span className="task-type-dot" style={{ background: `var(--${row.type})` }} />}
               <div className="task-list-name">{task.name}</div>
             </div>
           </div>
@@ -80,16 +84,18 @@ export const TaskListTable: React.FC<{
   );
 };
 
-export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily: string }> = ({
-  task,
-  fontSize,
-  fontFamily,
-}) => (
-  <div className="gantt-tooltip" style={{ fontSize, fontFamily }}>
-    <strong>{task.name}</strong>
-    <p>
-      From {formatDay(task.start)} to {formatDay(task.end)}
-    </p>
-    <p>Progress: {Math.round(task.progress)} %</p>
-  </div>
-);
+export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily: string }> = ({ task }) => {
+  const progress = Math.round(task.progress);
+  return (
+    <div className="gantt-tooltip">
+      <strong>{task.name}</strong>
+      <p>
+        From {formatDay(task.start)} to {formatDay(task.end)}
+      </p>
+      <p>{progress}% complete</p>
+      <div className="progress-track">
+        <div className="progress-value" style={{ width: `${progress}%` }} />
+      </div>
+    </div>
+  );
+};

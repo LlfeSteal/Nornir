@@ -1,31 +1,32 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Gantt, Task, ViewMode } from 'gantt-task-react';
 import 'gantt-task-react/dist/index.css';
 import { GanttTask } from '../types/gantt';
 import { FlatGanttTask, flattenGanttTree, visibleRows } from '../utils/flatten';
 import { RowInfoContext, TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
 import { columnFraction, columnsBetween } from '../utils/today';
-import { groupBand, lighten, TYPE_COLORS } from '../utils/colors';
+import { groupBand, muted, PALETTES, useColorScheme } from '../utils/colors';
 
 interface Props {
   data: GanttTask[];
+  viewMode: ViewMode;
 }
 
-const ROW_HEIGHT = 50; // px, gantt-task-react's default rowHeight
-const CHILD_BAR_LIGHTEN = 0.35; // bars below the top level are drawn lighter
+export interface GanttChartHandle {
+  /** Scrolls the timeline back to today. */
+  scrollToToday: () => void;
+}
 
-const VIEW_MODES: { label: string; mode: ViewMode }[] = [
-  { label: 'Day', mode: ViewMode.Day },
-  { label: 'Week', mode: ViewMode.Week },
-  { label: 'Month', mode: ViewMode.Month },
-];
+const ROW_HEIGHT = 40; // px
 
-const LIST_WIDTH = 220; // px, the single Name column
+const LIST_WIDTH = 260; // px, the single Name column
+const HEADER_HEIGHT = 52;
+const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif";
 
 const COLUMN_WIDTHS: Partial<Record<ViewMode, number>> = {
-  [ViewMode.Day]: 50,
-  [ViewMode.Week]: 120,
-  [ViewMode.Month]: 200,
+  [ViewMode.Day]: 44,
+  [ViewMode.Week]: 110,
+  [ViewMode.Month]: 180,
 };
 
 // gantt-task-react can only fill today's whole column (a whole week in Week view), so the
@@ -50,10 +51,44 @@ function drawTodayLine(root: HTMLElement, viewMode: ViewMode) {
     Number(column.getAttribute('x')) + columnFraction(new Date(), viewMode) * Number(column.getAttribute('width')),
   );
   const attributes: Record<string, string> = { x1: x, x2: x, y1: '0', y2: column.getAttribute('height') ?? '0' };
+  setAttributes(line, attributes);
+  drawTodayPill(root, Number(x));
+}
+
+// Only writes changes, so our own writes don't keep triggering the MutationObserver.
+function setAttributes(element: Element, attributes: Record<string, string>) {
   for (const [name, value] of Object.entries(attributes)) {
-    // Only write changes, so our own writes don't keep triggering the observer.
-    if (line.getAttribute(name) !== value) line.setAttribute(name, value);
+    if (element.getAttribute(name) !== value) element.setAttribute(name, value);
   }
+}
+
+// A "Today" pill at the bottom of the calendar header, above the line. The header is a
+// separate SVG (the one holding the calendar background) that scrolls with the chart.
+function drawTodayPill(root: HTMLElement, x: number) {
+  const header = root.querySelector<SVGRectElement>('._35nLX')?.ownerSVGElement;
+  if (!header) return;
+  let pill = header.querySelector<SVGGElement>('g.today-pill');
+  if (!pill) {
+    pill = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    pill.setAttribute('class', 'today-pill');
+    pill.append(
+      document.createElementNS('http://www.w3.org/2000/svg', 'rect'),
+      document.createElementNS('http://www.w3.org/2000/svg', 'text'),
+    );
+    pill.lastElementChild!.textContent = 'Today';
+    header.appendChild(pill);
+  }
+  const width = 40;
+  const height = 16;
+  const y = HEADER_HEIGHT - height - 2;
+  setAttributes(pill.firstElementChild!, {
+    x: String(x - width / 2),
+    y: String(y),
+    width: String(width),
+    height: String(height),
+    rx: String(height / 2),
+  });
+  setAttributes(pill.lastElementChild!, { x: String(x), y: String(y + height / 2) });
 }
 
 // Scrolls the chart so that the today line is in the middle of the visible area. The
@@ -91,14 +126,28 @@ function paintGroupBands(root: HTMLElement, rows: FlatGanttTask[]) {
 
 const CENTERING_MS = 500;
 
+/** Keeps centering on today for a short while, as the library settles over a few renders.
+ * Returns a function that stops it. */
+function startCentering(root: HTMLElement): () => void {
+  let frame = requestAnimationFrame(function step() {
+    centerOnTodayLine(root);
+    frame = requestAnimationFrame(step);
+  });
+  const stop = setTimeout(() => cancelAnimationFrame(frame), CENTERING_MS);
+  return () => {
+    cancelAnimationFrame(frame);
+    clearTimeout(stop);
+  };
+}
+
 // "YYYY-MM-DD" → local midnight (new Date("YYYY-MM-DD") would be parsed as UTC).
 function parseDay(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d);
 }
 
-export const GanttChart: React.FC<Props> = ({ data }) => {
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
+export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode }, ref) {
+  const scheme = useColorScheme();
   // Groups are collapsed unless expanded by the user: everything starts collapsed,
   // including groups that appear after a refresh.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -111,17 +160,16 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
   // settles over a few renders, so keep centering for a short while.
   useEffect(() => {
     const element = chartRef.current;
-    if (!element) return;
-    let frame = requestAnimationFrame(function step() {
-      centerOnTodayLine(element);
-      frame = requestAnimationFrame(step);
-    });
-    const stop = setTimeout(() => cancelAnimationFrame(frame), CENTERING_MS);
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(stop);
-    };
+    return element ? startCentering(element) : undefined;
   }, [viewMode, hasTasks]);
+
+  const stopManualCentering = useRef<() => void>();
+  const scrollToToday = useCallback(() => {
+    stopManualCentering.current?.();
+    if (chartRef.current) stopManualCentering.current = startCentering(chartRef.current);
+  }, []);
+  useImperativeHandle(ref, () => ({ scrollToToday }), [scrollToToday]);
+  useEffect(() => () => stopManualCentering.current?.(), []);
 
   const { tasks, urls, rowInfo, shownRows } = useMemo(() => {
     const flatItems = flattenGanttTree(data);
@@ -129,8 +177,10 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
     const rowInfo = new Map(flatItems.map((item) => [item.id, item]));
     const tasks: Task[] = flatItems.map((item) => {
       if (item.webUrl) urls.set(item.id, item.webUrl);
-      // Children are drawn lighter than the top-level bars they belong to.
-      const shade = (color: string) => (item.depth > 0 ? lighten(color, CHILD_BAR_LIGHTEN) : color);
+      // Children are drawn toned down compared to the top-level bars they belong to.
+      const palette = PALETTES[scheme];
+      const shade = (color: string) => (item.depth > 0 ? muted(color, scheme) : color);
+      const color = shade(palette.types[item.type]);
       // Any item with children becomes a collapsible "project".
       const isGroup = item.type === 'milestone' || item.hasChildren;
       return {
@@ -142,16 +192,19 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
         progress: item.progress || 0,
         project: item.parent,
         hideChildren: isGroup ? !expanded.has(item.id) : undefined,
-        styles: {
-          backgroundColor: shade(TYPE_COLORS[item.type]),
-          backgroundSelectedColor: shade('#2b6cb0'),
-          progressColor: '#1a202c55',
-          progressSelectedColor: '#1a202c88',
-        },
+        styles: isGroup
+          ? // Groups: a tinted track (see theme.css) with the solid progress on top.
+            { backgroundColor: color, backgroundSelectedColor: color, progressColor: color, progressSelectedColor: color }
+          : {
+              backgroundColor: color,
+              backgroundSelectedColor: shade(palette.selected),
+              progressColor: '#00000033',
+              progressSelectedColor: '#00000055',
+            },
       };
     });
     return { tasks, urls, rowInfo, shownRows: visibleRows(flatItems, expanded) };
-  }, [data, expanded]);
+  }, [data, expanded, scheme]);
 
   // Draws the today line and the group bands whenever the library re-renders its SVG.
   useEffect(() => {
@@ -191,40 +244,31 @@ export const GanttChart: React.FC<Props> = ({ data }) => {
     if (url) window.open(url, '_blank', 'noopener');
   };
 
-  if (tasks.length === 0) return <p className="empty">No data to display.</p>;
+  if (tasks.length === 0) return null;
 
   return (
-    <div className="gantt">
-      <div className="toolbar">
-        {VIEW_MODES.map(({ label, mode }) => (
-          <button
-            key={mode}
-            type="button"
-            className={mode === viewMode ? 'active' : undefined}
-            onClick={() => setViewMode(mode)}
-          >
-            {label}
-          </button>
-        ))}
-        <span className="hint">Double-click a bar to open the item in GitLab</span>
-      </div>
-      <div ref={chartRef} className="gantt-chart">
-        <RowInfoContext.Provider value={rowInfo}>
-          <Gantt
-            tasks={tasks}
-            viewMode={viewMode}
-            preStepsCount={preStepsCount}
-            todayColor="transparent"
-            listCellWidth={`${LIST_WIDTH}px`}
-            TaskListHeader={TaskListHeader}
-            TaskListTable={TaskListTable}
-            TooltipContent={TooltipContent}
-            columnWidth={columnWidth}
-            onExpanderClick={toggle}
-            onDoubleClick={openInGitLab}
-          />
-        </RowInfoContext.Provider>
-      </div>
+    <div ref={chartRef} className="gantt-chart card">
+      <RowInfoContext.Provider value={rowInfo}>
+        <Gantt
+          tasks={tasks}
+          viewMode={viewMode}
+          preStepsCount={preStepsCount}
+          todayColor="transparent"
+          listCellWidth={`${LIST_WIDTH}px`}
+          rowHeight={ROW_HEIGHT}
+          headerHeight={HEADER_HEIGHT}
+          barCornerRadius={6}
+          barFill={60}
+          fontFamily={FONT}
+          fontSize="12px"
+          TaskListHeader={TaskListHeader}
+          TaskListTable={TaskListTable}
+          TooltipContent={TooltipContent}
+          columnWidth={columnWidth}
+          onExpanderClick={toggle}
+          onDoubleClick={openInGitLab}
+        />
+      </RowInfoContext.Provider>
     </div>
   );
-};
+});

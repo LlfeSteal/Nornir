@@ -1,7 +1,7 @@
 import { expect, Page, test } from '@playwright/test';
-import { config, mockApi } from './fixtures';
+import { config, mockApi, tree } from './fixtures';
 
-const LIST_WIDTH = 220;
+const LIST_WIDTH = 260;
 
 /** Horizontal position of the today line, relative to its column and to the chart area. */
 async function todayLinePosition(page: Page) {
@@ -12,9 +12,16 @@ async function todayLinePosition(page: Page) {
   const chartBox = (await page.locator('.gantt-chart').boundingBox())!;
   const lineX = lineBox.x + lineBox.width / 2;
   return {
-    offsetInColumn: lineX - columnBox.x,
+    columnWidth: columnBox.width,
+    /** Position of the line inside today's column, from 0 (start) to 1 (end). */
+    fractionInColumn: (lineX - columnBox.x) / columnBox.width,
     offsetFromCenter: lineX - (chartBox.x + LIST_WIDTH + (chartBox.width - LIST_WIDTH) / 2),
   };
+}
+
+/** Height of a list row (and of a timeline row). */
+async function rowHeight(page: Page) {
+  return (await page.locator('.task-list-row').first().boundingBox())!.height;
 }
 
 /** Visible list rows, in order: name, tree depth and whether it is its parent's last child. */
@@ -43,7 +50,7 @@ function luminance(hex: string) {
   return 0.2126 * ((value >> 16) & 255) + 0.7152 * ((value >> 8) & 255) + 0.0722 * (value & 255);
 }
 
-const EPIC_BAND = 'rgba(49, 130, 206, 0.1)'; // epic color #3182ce at 10%
+const EPIC_BAND = 'rgba(0, 122, 255, 0.1)'; // epic color (systemBlue) at 10%, light appearance
 
 test.describe('Gantt (mocked API)', () => {
   test('shows the configured group and only the collapsed top-level rows', async ({ page }) => {
@@ -70,11 +77,11 @@ test.describe('Gantt (mocked API)', () => {
 
     // Only the top-level copy is visible while its parent is collapsed.
     await expect(page.getByTitle('Child epic')).toHaveCount(1);
-    await page.getByTitle('Child epic').locator('..').getByText('▶').click();
+    await page.getByTitle('Child epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Deep issue')).toHaveCount(1);
 
     // Expanding the parent shows the nested epic in its hierarchy too.
-    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Child epic')).toHaveCount(2);
   });
 
@@ -83,15 +90,15 @@ test.describe('Gantt (mocked API)', () => {
     await page.goto('/');
 
     const epicRow = page.getByTitle('Main epic').locator('..');
-    await epicRow.getByText('▶').click();
+    await epicRow.getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Standalone issue')).toBeVisible();
     await expect(page.getByTitle('Shared issue')).toHaveCount(1);
 
     // The issue attached to both the epic and the milestone also shows up under the milestone.
-    await page.getByTitle('[Milestone] Sprint 1').locator('..').getByText('▶').click();
+    await page.getByTitle('[Milestone] Sprint 1').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Shared issue')).toHaveCount(2);
 
-    await epicRow.getByText('▼').click();
+    await epicRow.getByRole('button', { name: 'Collapse' }).click();
     await expect(page.getByTitle('Standalone issue')).toHaveCount(0);
     await expect(page.getByTitle('Shared issue')).toHaveCount(1); // the copy under the milestone remains
   });
@@ -99,7 +106,7 @@ test.describe('Gantt (mocked API)', () => {
   test('expanded children are indented right below their parent, with tree connectors', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
-    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
 
     let rows = await listRows(page);
     let parent = rows.findIndex((r) => r.name === 'Main epic');
@@ -113,7 +120,7 @@ test.describe('Gantt (mocked API)', () => {
     expect(rows.filter((r) => r.name === 'Child epic').map((r) => r.depth)).toEqual([1, 0]);
 
     // One more level: the nested epic's child comes right below it, further indented.
-    await page.locator('.task-list-row[data-depth="1"]', { has: page.getByTitle('Child epic') }).getByText('▶').click();
+    await page.locator('.task-list-row[data-depth="1"]', { has: page.getByTitle('Child epic') }).getByRole('button', { name: 'Expand' }).click();
     rows = await listRows(page);
     parent = rows.findIndex((r) => r.name === 'Child epic' && r.depth === 1);
     expect(rows[parent + 1]).toMatchObject({ name: 'Deep issue', depth: 2, last: true });
@@ -124,25 +131,26 @@ test.describe('Gantt (mocked API)', () => {
     await mockApi(page);
     await page.goto('/');
     const epicRow = page.getByTitle('Main epic').locator('..');
-    await epicRow.getByText('▶').click();
+    await epicRow.getByRole('button', { name: 'Expand' }).click();
 
     const rows = await listRows(page);
     const child = rows.findIndex((r) => r.name === 'Standalone issue');
     expect(rows[child].background).toBe(EPIC_BAND);
     expect(rows.find((r) => r.name === 'Main epic')!.background).not.toBe(EPIC_BAND);
 
-    // Timeline rows are 50 px high: the child's row is the grid rect at its index.
-    const timelineRow = page.locator(`g.rows rect[y="${child * 50}"]`);
-    await expect.poll(() => timelineRow.evaluate((rect) => (rect as SVGRectElement).style.fill)).toBe(EPIC_BAND);
+    // The child's timeline row is the grid rect at its index.
+    const timelineRow = page.locator(`g.rows rect[y="${child * (await rowHeight(page))}"]`);
+    const fill = () => timelineRow.evaluate((rect) => getComputedStyle(rect).fill);
+    await expect.poll(fill).toBe(EPIC_BAND);
 
-    await epicRow.getByText('▼').click();
-    await expect.poll(() => timelineRow.evaluate((rect) => (rect as SVGRectElement).style.fill)).not.toBe(EPIC_BAND);
+    await epicRow.getByRole('button', { name: 'Collapse' }).click();
+    await expect.poll(fill).not.toBe(EPIC_BAND);
   });
 
   test('child bars are lighter than top-level bars', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
-    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.locator('svg text', { hasText: 'Child epic' })).toHaveCount(2);
 
     // Same type (epic): the nested one (first, under Main epic) vs its top-level copy.
@@ -175,7 +183,7 @@ test.describe('Gantt (mocked API)', () => {
     const tooltip = page.locator('.gantt-tooltip');
     await expect(tooltip).toContainText('Main epic');
     await expect(tooltip).toContainText('From Oct 1, 2026 to Dec 1, 2026');
-    await expect(tooltip).toContainText('Progress: 50 %');
+    await expect(tooltip).toContainText('50% complete');
   });
 
   test('marks today with a line and centers the chart on it', async ({ page }) => {
@@ -185,14 +193,14 @@ test.describe('Gantt (mocked API)', () => {
     await page.goto('/');
 
     let position = await todayLinePosition(page);
-    expect(position.offsetInColumn).toBeCloseTo(0.5 * 120, 0); // week columns are 120 px
-    expect(Math.abs(position.offsetFromCenter)).toBeLessThanOrEqual(120);
+    expect(position.fractionInColumn).toBeCloseTo(0.5, 2);
+    expect(Math.abs(position.offsetFromCenter)).toBeLessThanOrEqual(position.columnWidth);
 
     // Switching view mode centers again, and the line follows the new columns.
-    await page.getByRole('button', { name: 'Month', exact: true }).click();
-    await expect.poll(async () => (await todayLinePosition(page)).offsetInColumn).toBeCloseTo((14.5 / 31) * 200, 0);
+    await page.getByRole('radio', { name: 'Month' }).click();
+    await expect.poll(async () => (await todayLinePosition(page)).fractionInColumn).toBeCloseTo(14.5 / 31, 2);
     position = await todayLinePosition(page);
-    expect(Math.abs(position.offsetFromCenter)).toBeLessThanOrEqual(200);
+    expect(Math.abs(position.offsetFromCenter)).toBeLessThanOrEqual(position.columnWidth);
   });
 
   test('the today line stays when rows are expanded', async ({ page }) => {
@@ -201,22 +209,25 @@ test.describe('Gantt (mocked API)', () => {
     await page.goto('/');
     await expect(page.locator('line.today-line')).toHaveCount(1);
 
-    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Standalone issue')).toBeVisible();
     const line = page.locator('line.today-line');
     await expect(line).toHaveCount(1);
-    // The line spans every visible row, including the new ones (rows are 50 px high).
+    // The line spans every visible row, including the new ones.
     const rows = await page.locator('.task-list-row').count();
-    await expect.poll(async () => Number(await line.getAttribute('y2'))).toBeGreaterThanOrEqual(rows * 50);
+    const height = await rowHeight(page);
+    await expect.poll(async () => Number(await line.getAttribute('y2'))).toBeGreaterThanOrEqual(rows * height);
   });
 
   test('switches view mode', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
+    await expect(page.getByRole('radio', { name: 'Week' })).toHaveAttribute('aria-checked', 'true');
     for (const label of ['Day', 'Month', 'Week']) {
-      const button = page.getByRole('button', { name: label, exact: true });
-      await button.click();
-      await expect(button).toHaveClass(/active/);
+      const segment = page.getByRole('radio', { name: label });
+      await segment.click();
+      await expect(segment).toHaveAttribute('aria-checked', 'true');
+      await expect(page.getByRole('radio', { checked: true })).toHaveCount(1);
     }
   });
 
@@ -226,7 +237,7 @@ test.describe('Gantt (mocked API)', () => {
     await expect(page.getByTitle('Main epic')).toBeVisible();
     expect(calls.at(-1)).not.toContain('refresh=1');
 
-    await page.getByTitle('Main epic').locator('..').getByText('▶').click();
+    await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Standalone issue')).toBeVisible();
 
     await page.getByRole('button', { name: 'Refresh' }).click();
@@ -238,12 +249,72 @@ test.describe('Gantt (mocked API)', () => {
   test('shows the backend error', async ({ page }) => {
     await mockApi(page, { status: 404, body: { error: 'group not found or not accessible' } });
     await page.goto('/');
-    await expect(page.getByText('Error: group not found or not accessible')).toBeVisible();
+    const banner = page.getByRole('alert');
+    await expect(banner).toContainText("Couldn't load the chart");
+    await expect(banner).toContainText('group not found or not accessible');
+    await expect(banner.getByRole('button', { name: 'Try again' })).toBeVisible();
+  });
+
+  test('explains when the server does not answer', async ({ page }) => {
+    await mockApi(page, { status: 502, body: '<html>Bad Gateway</html>' });
+    await page.goto('/');
+    await expect(page.getByRole('alert')).toContainText('The Nornir server is not responding');
   });
 
   test('shows a message when the group is empty', async ({ page }) => {
     await mockApi(page, { body: [] });
     await page.goto('/');
-    await expect(page.getByText('No data to display.')).toBeVisible();
+    await expect(page.getByText('No items in this group')).toBeVisible();
+  });
+
+  test('the Today button brings today back to the center', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+    await mockApi(page);
+    await page.goto('/');
+    await expect(page.locator('line.today-line')).toHaveCount(1);
+    await page.waitForTimeout(700); // let the initial centering finish
+
+    // Scroll the timeline all the way to the left, as a user would. A real scroll sends a
+    // stream of events and the library ignores every other one, so send it until it moves.
+    await expect
+      .poll(async () => {
+        await page.locator('.gantt-chart div').evaluateAll((divs) => {
+          const scrollbar = divs.find((d) => getComputedStyle(d).overflowX === 'auto')!;
+          scrollbar.scrollLeft = 0;
+          scrollbar.dispatchEvent(new Event('scroll', { bubbles: true }));
+        });
+        return Math.abs((await todayLinePosition(page)).offsetFromCenter);
+      })
+      .toBeGreaterThan(200);
+
+    await page.getByRole('button', { name: 'Today' }).click();
+    await expect
+      .poll(async () => {
+        const position = await todayLinePosition(page);
+        return Math.abs(position.offsetFromCenter) <= position.columnWidth;
+      })
+      .toBe(true);
+  });
+
+  test('shows a skeleton while loading, then the time of the last update', async ({ page }) => {
+    await mockApi(page, { body: tree, delayMs: 800 });
+    await page.goto('/');
+
+    await expect(page.getByLabel('Loading')).toBeVisible();
+    await expect(page.getByTitle('Main epic')).toBeVisible();
+    await expect(page.getByLabel('Loading')).toHaveCount(0);
+    await expect(page.locator('.toolbar')).toContainText(/Updated at \d{1,2}:\d{2}/);
+  });
+
+  test('follows the dark appearance of the system', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await mockApi(page);
+    await page.goto('/');
+    await expect(page.getByTitle('Main epic')).toBeVisible();
+
+    const card = await page.locator('.gantt-chart').evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(card).toBe('rgb(28, 28, 30)');
+    // Bars use the dark variants of the system colors.
+    expect(await barFill(page, 'Main epic')).toBe('#0a84ff');
   });
 });

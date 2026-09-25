@@ -32,11 +32,15 @@ export const tree = [
 ];
 
 /** Replaces the backend with fixed responses; returns the /api/gantt URLs that were called. */
-export async function mockApi(page: Page, gantt: { status?: number; body: unknown } = { body: tree }) {
+export async function mockApi(
+  page: Page,
+  gantt: { status?: number; body: unknown; delayMs?: number } = { body: tree },
+) {
   const ganttCalls: string[] = [];
   await page.route('**/api/config', (route) => route.fulfill({ json: config }));
-  await page.route('**/api/gantt*', (route) => {
+  await page.route('**/api/gantt*', async (route) => {
     ganttCalls.push(route.request().url());
+    if (gantt.delayMs) await new Promise((resolve) => setTimeout(resolve, gantt.delayMs));
     return route.fulfill({ status: gantt.status ?? 200, json: gantt.body });
   });
   return ganttCalls;
