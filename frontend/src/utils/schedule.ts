@@ -25,3 +25,12 @@ export function scheduleLabel(progress: number, linear: number): string {
   const ahead = Math.round(-gap);
   return ahead >= 1 ? `On track · ${ahead}% ahead` : 'On track';
 }
+
+/** Why a row's dates can't be trusted (made up by the backend), or undefined when GitLab
+ * has both. Such rows get no schedule status. */
+export function missingDatesMessage(row: { noStartDate?: boolean; noDueDate?: boolean }): string | undefined {
+  if (row.noStartDate && row.noDueDate) return 'No dates in GitLab';
+  if (row.noStartDate) return 'No start date in GitLab';
+  if (row.noDueDate) return 'No due date in GitLab';
+  return undefined;
+}

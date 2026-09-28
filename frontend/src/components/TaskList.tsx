@@ -1,8 +1,8 @@
 import React, { createContext, useContext } from 'react';
 import { Task } from 'gantt-task-react';
 import { FlatGanttTask } from '../utils/flatten';
-import { ChevronIcon } from './Icons';
-import { scheduleLabel, scheduleStatus } from '../utils/schedule';
+import { ChevronIcon, WarningIcon } from './Icons';
+import { missingDatesMessage, scheduleLabel, scheduleStatus } from '../utils/schedule';
 
 // Replacements for gantt-task-react's list and tooltip: the list shows only the item
 // names (no From/To columns), and the dates move to the tooltip shown on a bar.
@@ -48,6 +48,7 @@ export const TaskListTable: React.FC<{
         // hideChildren is only defined on groups: undefined means a leaf, without chevron.
         const isGroup = task.hideChildren !== undefined;
         const expanded = task.hideChildren === false;
+        const missingDates = row && missingDatesMessage(row);
         return (
           <div
             key={task.id}
@@ -56,8 +57,11 @@ export const TaskListTable: React.FC<{
             data-depth={depth}
             data-parent-type={row?.parentType}
             data-expanded={expanded ? 'true' : undefined}
-            data-schedule={isGroup && row && !row.closed ? scheduleStatus(row.progress, row.linearProgress) : undefined}
+            data-schedule={
+              isGroup && row && !row.closed && !missingDates ? scheduleStatus(row.progress, row.linearProgress) : undefined
+            }
             data-closed={row?.closed ? 'true' : undefined}
+            data-undated={missingDates ? 'true' : undefined}
           >
             <div className="task-list-cell" style={{ width: rowWidth }} title={task.name}>
               {row?.guides.map((line, level) => (
@@ -79,6 +83,11 @@ export const TaskListTable: React.FC<{
               )}
               {row && <span className="task-type-dot" style={{ background: `var(--${row.type})` }} />}
               <div className="task-list-name">{task.name}</div>
+              {missingDates && (
+                <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
+                  <WarningIcon size={13} />
+                </span>
+              )}
             </div>
           </div>
         );
@@ -95,9 +104,12 @@ export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily
   // Epics and milestones also show their expected (linear) progress, drawn on their bar.
   const isGroup = task.type === 'project';
   const linear = row?.linearProgress ?? 0;
-  const status = closed ? 'closed' : isGroup ? scheduleStatus(progress, linear) : undefined;
+  // Without dates in GitLab, the dates shown are made up: no schedule status.
+  const missingDates = row && missingDatesMessage(row);
+  const scheduled = isGroup && !closed && !missingDates;
+  const status = closed ? 'closed' : scheduled ? scheduleStatus(progress, linear) : undefined;
   return (
-    <div className="gantt-tooltip" data-status={status}>
+    <div className="gantt-tooltip" data-status={status} data-undated={missingDates ? 'true' : undefined}>
       <strong>{task.name}</strong>
       <p>
         From {formatDay(task.start)} to {formatDay(task.end)}
@@ -108,13 +120,19 @@ export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily
           <strong>Closed</strong>
         </p>
       )}
-      {isGroup && !closed && (
+      {missingDates && (
+        <p className="schedule missing-dates-note">
+          <WarningIcon size={12} />
+          <strong>{missingDates}</strong>
+        </p>
+      )}
+      {scheduled && (
         <p className="schedule" data-status={status}>
           Expected {Math.round(linear)}% · <strong>{scheduleLabel(progress, linear)}</strong>
         </p>
       )}
       <div className="progress-track">
-        {isGroup && !closed && <div className="progress-linear" style={{ width: `${Math.min(100, linear)}%` }} />}
+        {scheduled && <div className="progress-linear" style={{ width: `${Math.min(100, linear)}%` }} />}
         <div className="progress-value" style={{ width: `${progress}%` }} />
       </div>
     </div>

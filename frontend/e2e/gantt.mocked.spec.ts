@@ -646,6 +646,59 @@ test.describe('Gantt (mocked API)', () => {
     });
   });
 
+  test.describe('missing dates', () => {
+    // Today is 2026-10-15: the backend puts rows without dates on today only.
+    const undatedTree = [
+      {
+        id: 'E1', name: 'Undated epic', type: 'epic', noStartDate: true, noDueDate: true, start: '2026-10-15', end: '2026-10-16', progress: 0, linearProgress: 50,
+        children: [{ id: 'I1', name: 'Dated issue', type: 'issue', start: '2026-10-05', end: '2026-10-25', progress: 0, linearProgress: 50 }],
+      },
+      {
+        id: 'E2', name: 'Dated epic', type: 'epic', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 50,
+        children: [{ id: 'I3', name: 'Other issue', type: 'issue', start: '2026-10-05', end: '2026-10-25', progress: 0, linearProgress: 50 }],
+      },
+      { id: 'I2', name: 'Due date only', type: 'issue', noStartDate: true, start: '2026-10-06', end: '2026-10-20', progress: 0, linearProgress: 50 },
+    ];
+
+    test.beforeEach(async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+      await mockApi(page, { body: undatedTree });
+      await page.goto('/');
+      await expect(page.getByTitle('Undated epic')).toBeVisible();
+    });
+
+    const row = (page: Page, name: string) => page.locator('.task-list-row', { has: page.getByTitle(name, { exact: true }) });
+
+    test('a warning sign next to the name says the dates are missing', async ({ page }) => {
+      const warning = row(page, 'Undated epic').getByRole('img', { name: 'No dates in GitLab' });
+      await expect(warning).toBeVisible();
+      await expect(warning).toHaveAttribute('title', 'No dates in GitLab');
+      await expect(row(page, 'Due date only').getByRole('img', { name: 'No start date in GitLab' })).toBeVisible();
+      await expect(row(page, 'Dated epic').getByRole('img')).toHaveCount(0);
+    });
+
+    test('the bar is gray with a dashed outline and no schedule', async ({ page }) => {
+      const undated = page.locator('.gantt-chart g[data-undated]');
+      await expect(undated).toHaveCount(2); // the epic and the issue with a due date only
+      expect(await barFill(page, 'Undated epic')).toBe('#aeaeb2');
+      await expect(undated.first().locator('._2RbVy')).toHaveCSS('stroke-dasharray', '3px, 2px');
+
+      // No expected-progress layer and no schedule color, unlike a dated epic that is late.
+      await expect(undated.first().locator('rect.linear-progress')).toHaveCount(0);
+      await expect(page.locator('rect.linear-progress')).toHaveCount(1);
+      await expect(row(page, 'Undated epic')).not.toHaveAttribute('data-schedule');
+      await expect(row(page, 'Dated epic')).toHaveAttribute('data-schedule', 'late');
+    });
+
+    test('the tooltip says the dates are missing instead of judging the schedule', async ({ page }) => {
+      const bar = (await page.locator('.gantt-chart g[data-undated] ._2RbVy').boundingBox())!;
+      await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
+      const tooltip = page.locator('.gantt-tooltip');
+      await expect(tooltip).toContainText('No dates in GitLab');
+      await expect(tooltip).not.toContainText('Expected');
+    });
+  });
+
   test.describe('filters', () => {
     /** Names of the visible list rows, in order. */
     async function rowNames(page: Page) {

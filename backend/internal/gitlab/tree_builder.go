@@ -71,15 +71,17 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		if _, exists := milestones[key]; exists {
 			return
 		}
-		msStart := fallbackDate(ms.StartDate, now, 0)
+		msStart, msEnd, noStart, noDue := fallbackDates(ms.StartDate, ms.DueDate, now)
 		milestones[key] = &model.GanttTask{
-			ID:     ms.ID,
-			Name:   "[Milestone] " + ms.Title,
-			Type:   model.TypeMilestone,
-			Start:  msStart,
-			End:    ensureEndAfterStart(msStart, fallbackDate(ms.DueDate, now, 30)),
-			WebURL: ms.WebURL,
-			Closed: ms.State == "closed",
+			ID:          ms.ID,
+			Name:        "[Milestone] " + ms.Title,
+			Type:        model.TypeMilestone,
+			Start:       msStart,
+			End:         msEnd,
+			NoStartDate: noStart,
+			NoDueDate:   noDue,
+			WebURL:      ms.WebURL,
+			Closed:      ms.State == "closed",
 		}
 		milestones[key].LinearProgress = linearProgress(milestones[key].Start, milestones[key].End, now)
 		milestoneOrder = append(milestoneOrder, key)
@@ -93,16 +95,18 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		if _, dup := items[node.ID]; dup {
 			continue
 		}
-		start, end := extractDates(node.Widgets, now)
+		start, end, noStart, noDue := extractDates(node.Widgets, now)
 		item := &parsedItem{
 			task: model.GanttTask{
-				ID:     node.ID,
-				Name:   node.Title,
-				Type:   mapType(node.WorkItemType.Name),
-				Start:  start,
-				End:    end,
-				WebURL: node.WebURL,
-				Labels: extractLabels(node.Widgets),
+				ID:          node.ID,
+				Name:        node.Title,
+				Type:        mapType(node.WorkItemType.Name),
+				Start:       start,
+				End:         end,
+				WebURL:      node.WebURL,
+				Labels:      extractLabels(node.Widgets),
+				NoStartDate: noStart,
+				NoDueDate:   noDue,
 			},
 			closed:            node.State == "CLOSED",
 			weight:            extractWeight(node.Widgets),
@@ -336,14 +340,23 @@ func extractMilestoneWidget(widgets []WorkItemWidget) *Milestone {
 	return nil
 }
 
-func extractDates(widgets []WorkItemWidget, now time.Time) (string, string) {
-	start, end := "", ""
+// extractDates returns the dates of an item (see fallbackDates) and which of them are
+// missing in GitLab.
+func extractDates(widgets []WorkItemWidget, now time.Time) (start, end string, noStart, noDue bool) {
 	for _, w := range widgets {
 		if w.Typename == typenameDates {
 			start = w.StartDate
 			end = w.DueDate
 		}
 	}
+	return fallbackDates(start, end, now)
+}
+
+// fallbackDates fills in missing dates so every row has a bar: no dates → today only (the
+// row is flagged, not planned); due date only → a 14-day bar ending on it; start only → a
+// 14-day bar starting on it. Always end > start.
+func fallbackDates(start, end string, now time.Time) (string, string, bool, bool) {
+	noStart, noDue := start == "", end == ""
 	switch {
 	case start == "" && end != "":
 		// Only the due date is known: show a 14-day bar ending on it.
@@ -355,16 +368,16 @@ func extractDates(widgets []WorkItemWidget, now time.Time) (string, string) {
 			end = s.AddDate(0, 0, 14).Format(dateLayout)
 		}
 	}
-	start = fallbackDate(start, now, 0)
-	end = fallbackDate(end, now, 14)
-	return start, ensureEndAfterStart(start, end)
+	start = orToday(start, now)
+	end = orToday(end, now)
+	return start, ensureEndAfterStart(start, end), noStart, noDue
 }
 
-func fallbackDate(dateStr string, now time.Time, addDays int) string {
+func orToday(dateStr string, now time.Time) string {
 	if dateStr != "" {
 		return dateStr
 	}
-	return now.AddDate(0, 0, addDays).Format(dateLayout)
+	return now.Format(dateLayout)
 }
 
 // ensureEndAfterStart guarantees end > start (gantt-task-react mishandles inverted bars).

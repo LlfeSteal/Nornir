@@ -35,6 +35,8 @@
   --late: var(--red);
   --closed-bg: rgba(142, 142, 147, 0.18); /* systemGray, hatched */
   --closed-stroke: rgba(142, 142, 147, 0.45);
+  --undated: #aeaeb2; /* systemGray2: bars without dates in GitLab (PALETTES.undated) */
+  --warning: var(--orange);
   --milestone-band: rgba(175, 82, 222, 0.1);
   --epic-band: rgba(0, 122, 255, 0.1);
   --issue-band: rgba(48, 176, 199, 0.1);
@@ -71,6 +73,7 @@
   --red: #ff453a;
   --closed-bg: rgba(142, 142, 147, 0.22);
   --closed-stroke: rgba(142, 142, 147, 0.5);
+  --undated: #636366;
   --milestone-band: rgba(191, 90, 242, 0.16);
   --epic-band: rgba(10, 132, 255, 0.16);
   --issue-band: rgba(64, 200, 224, 0.16);
@@ -160,6 +163,7 @@ button { font: inherit; color: inherit; }
 .legend-swatch { width: 18px; height: 8px; border-radius: 3px; background: var(--text-secondary); }
 .legend-swatch.linear { opacity: 0.55; }
 .legend-swatch.track { opacity: 0.3; }
+.legend-swatch.undated { background: color-mix(in srgb, var(--undated) 35%, transparent); outline: 1.5px dashed var(--warning); outline-offset: -1.5px; }
 .legend-swatch.closed { background: repeating-linear-gradient(45deg, var(--closed-bg) 0 2px, var(--closed-stroke) 2px 4px); }
 
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
@@ -223,6 +227,11 @@ button { font: inherit; color: inherit; }
 .task-list-row[data-expanded] .task-list-name { font-weight: 600; }
 /* Closed rows: grayed out in the list, hatched on the timeline */
 .task-list-row[data-closed] .task-list-name { color: var(--text-secondary); }
+/* Rows without dates in GitLab: a warning sign after the name, an orange dashed outline on
+   the bar (whose dates are made up), no schedule color */
+.missing-dates { flex: none; display: inline-flex; margin-left: 6px; color: var(--warning); cursor: help; }
+.gantt-chart g[data-undated] :is(._31ERP, ._2RbVy) { stroke: var(--warning); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.gantt-chart g[data-undated] ._2RbVy { opacity: 1; fill-opacity: 0.35; } /* keep the outline opaque */
 .task-list-row[data-closed] .task-type-dot { background: var(--text-tertiary) !important; }
 .gantt-chart g[data-closed] ._2RbVy { opacity: 1; } /* no transparent track: the hatch is already light */
 .gantt-chart g[data-closed] text { fill: var(--text-secondary) !important; }
@@ -252,6 +261,9 @@ button { font: inherit; color: inherit; }
 .gantt-tooltip .schedule[data-status='late'] strong { color: var(--late); }
 .gantt-tooltip[data-status='on-track'] .progress-value, .gantt-tooltip[data-status='on-track'] .progress-linear { background: var(--on-track); }
 .gantt-tooltip[data-status='at-risk'] .progress-value, .gantt-tooltip[data-status='at-risk'] .progress-linear { background: var(--at-risk); }
+.gantt-tooltip[data-undated] .progress-value { background: var(--undated); }
+.gantt-tooltip .missing-dates-note { display: flex; align-items: center; gap: 4px; color: var(--warning); }
+.gantt-tooltip .missing-dates-note strong { display: inline; margin: 0; font-size: inherit; color: inherit; }
 .gantt-tooltip[data-status='closed'] .progress-value { background: var(--text-tertiary); }
 .gantt-tooltip .schedule[data-status='closed'] strong { color: var(--text-secondary); }
 .gantt-tooltip[data-status='late'] .progress-value, .gantt-tooltip[data-status='late'] .progress-linear { background: var(--late); }

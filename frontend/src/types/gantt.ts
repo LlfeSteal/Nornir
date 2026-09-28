@@ -15,6 +15,8 @@ export interface GanttTask {
   linearProgress: number;  // Progress expected today from the dates (0 to 100)
   webUrl?: string;
   closed?: boolean;        // Closed work item or milestone
+  noStartDate?: boolean;   // No start date in GitLab: `start` is made up
+  noDueDate?: boolean;     // No due date in GitLab: `end` is made up
   labels?: Label[];
   children?: GanttTask[];  // Recursive children
 }

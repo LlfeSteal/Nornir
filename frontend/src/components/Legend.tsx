@@ -41,6 +41,8 @@ export const Legend: React.FC = () => (
         Planned
         <span className="legend-swatch closed" />
         Closed
+        <span className="legend-swatch undated" />
+        No dates
       </span>
       <span className="legend-item">
         <span className="legend-line" />

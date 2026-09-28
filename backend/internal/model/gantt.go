@@ -18,11 +18,15 @@ type GanttTask struct {
 	// LinearProgress is the progress expected today if the work advanced evenly between
 	// Start and End (0 to 100): comparing it with Progress tells whether the row is ahead
 	// or behind schedule.
-	LinearProgress float64     `json:"linearProgress"`
-	WebURL         string      `json:"webUrl,omitempty"`
-	Closed         bool        `json:"closed,omitempty"` // closed work item or milestone
-	Labels         []Label     `json:"labels,omitempty"`
-	Children       []GanttTask `json:"children,omitempty"` // Recursive structure
+	LinearProgress float64 `json:"linearProgress"`
+	WebURL         string  `json:"webUrl,omitempty"`
+	Closed         bool    `json:"closed,omitempty"` // closed work item or milestone
+	// NoStartDate / NoDueDate: the date is missing in GitLab, Start / End are made up (see
+	// extractDates): the UI flags the row and doesn't judge its schedule.
+	NoStartDate bool        `json:"noStartDate,omitempty"`
+	NoDueDate   bool        `json:"noDueDate,omitempty"`
+	Labels      []Label     `json:"labels,omitempty"`
+	Children    []GanttTask `json:"children,omitempty"` // Recursive structure
 }
 
 type Label struct {

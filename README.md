@@ -57,7 +57,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - Progress is computed level by level: an item is at the mean of its direct children's progress, each weighted by its GitLab `weight` (1 point when it has none); a closed issue is at 100%. For example, 2 issues of 5 points with one closed → 50%; a capability with 3 unweighted features at 50%, 0% and 0% → 16.67%.
 - Double-click a bar to open the item in GitLab.
 - **Refresh** reloads from GitLab without waiting for the cache to expire.
-- Items without dates in GitLab are shown over 14 days starting today.
+- Items without dates in GitLab are shown on today only, just so they appear: a warning sign next to their name (hover it: "No dates in GitLab"), a gray bar with an orange dashed outline, and no schedule color (their dates are made up). With only one date, the bar spans 14 days from it and the warning says which date is missing.
 
 ## Tests
 

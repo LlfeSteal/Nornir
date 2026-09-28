@@ -7,7 +7,7 @@ import { RowInfoContext, TaskListHeader, TaskListTable, TooltipContent } from '.
 import { columnFraction, columnsBetween } from '../utils/today';
 import { groupBand, muted, PALETTES } from '../utils/colors';
 import { useColorScheme } from '../utils/appearance';
-import { scheduleStatus } from '../utils/schedule';
+import { missingDatesMessage, scheduleStatus } from '../utils/schedule';
 
 interface Props {
   data: GanttTask[];
@@ -145,7 +145,7 @@ function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[]) {
   root.querySelectorAll<SVGRectElement>('._1KJ6x > rect._2RbVy').forEach((track) => {
     const row = rows[Math.floor(Number(track.getAttribute('y')) / ROW_HEIGHT)];
     let linear = track.parentElement!.querySelector<SVGRectElement>('rect.linear-progress');
-    if (!row || row.closed || !(row.linearProgress > 0)) {
+    if (!row || row.closed || missingDatesMessage(row) || !(row.linearProgress > 0)) {
       linear?.remove();
       return;
     }
@@ -185,19 +185,25 @@ function ClosedHatchPattern() {
   );
 }
 
-// Flags the bars of closed rows (data-closed on the library's task group, which also holds
-// the label), so the CSS can gray their label and keep the hatch readable.
-function markClosedBars(root: HTMLElement, rows: FlatGanttTask[]) {
+// Flags the bars (on the library's task group, which also holds the label) for the CSS:
+// data-closed grays the label and keeps the hatch readable; data-undated outlines the bars
+// whose dates are missing in GitLab.
+function markBars(root: HTMLElement, rows: FlatGanttTask[]) {
   root.querySelectorAll<SVGGElement>('._KxSXS, ._1KJ6x').forEach((bar) => {
     const rect = bar.querySelector('rect');
     const row = rect ? rows[Math.floor(Number(rect.getAttribute('y')) / ROW_HEIGHT)] : undefined;
     const item = bar.parentElement!;
-    if (row?.closed) {
-      if (item.getAttribute('data-closed') !== 'true') item.setAttribute('data-closed', 'true');
-    } else if (item.hasAttribute('data-closed')) {
-      item.removeAttribute('data-closed');
-    }
+    setFlag(item, 'data-closed', !!row?.closed);
+    setFlag(item, 'data-undated', !!row && !row.closed && !!missingDatesMessage(row));
   });
+}
+
+function setFlag(element: Element, name: string, on: boolean) {
+  if (on) {
+    if (element.getAttribute(name) !== 'true') element.setAttribute(name, 'true');
+  } else if (element.hasAttribute(name)) {
+    element.removeAttribute(name);
+  }
 }
 
 const CENTERING_MS = 500;
@@ -274,9 +280,13 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
       // Any item with children becomes a collapsible "project".
       const isGroup = item.type === 'milestone' || item.hasChildren;
       // Epics and milestones are colored by schedule status (green / orange / red), other
-      // rows by type.
+      // rows by type. Rows without dates in GitLab are gray: their schedule means nothing.
       const color = shade(
-        isGroup ? palette.status[scheduleStatus(item.progress, item.linearProgress)] : palette.types[item.type],
+        missingDatesMessage(item)
+          ? palette.undated
+          : isGroup
+          ? palette.status[scheduleStatus(item.progress, item.linearProgress)]
+          : palette.types[item.type],
       );
       return {
         start: parseDay(item.start),
@@ -354,7 +364,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
       }
       paintGroupBands(element, shownRows);
       paintLinearProgress(element, shownRows);
-      markClosedBars(element, shownRows);
+      markBars(element, shownRows);
     };
     draw();
     const observer = new MutationObserver(draw);

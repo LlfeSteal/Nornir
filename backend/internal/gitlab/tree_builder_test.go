@@ -119,7 +119,7 @@ func TestMilestoneOnlyKeepsID(t *testing.T) {
 
 	assertIDs(t, "roots", tree, "ms1")
 	assertIDs(t, "milestone children", tree[0].Children, "issue")
-	if tree[0].Start != "2026-01-10" || tree[0].End != "2026-02-09" {
+	if tree[0].Start != "2026-01-10" || tree[0].End != "2026-01-11" || !tree[0].NoStartDate || !tree[0].NoDueDate {
 		t.Fatalf("milestone fallback dates = %s..%s", tree[0].Start, tree[0].End)
 	}
 }
@@ -169,23 +169,65 @@ func TestWidgetsMatchedOnTypename(t *testing.T) {
 
 func TestDateFallbacks(t *testing.T) {
 	cases := []struct {
-		name               string
-		widget             WorkItemWidget
-		wantStart, wantEnd string
+		name                   string
+		widgets                []WorkItemWidget
+		wantStart, wantEnd     string
+		wantNoStart, wantNoDue bool
 	}{
-		{"none", dates("", ""), "2026-01-10", "2026-01-24"},
-		{"due only", dates("", "2026-03-15"), "2026-03-01", "2026-03-15"},
-		{"start only", dates("2026-03-01", ""), "2026-03-01", "2026-03-15"},
-		{"inverted", dates("2026-03-10", "2026-03-01"), "2026-03-10", "2026-03-11"},
-		{"same day", dates("2026-03-10", "2026-03-10"), "2026-03-10", "2026-03-11"},
+		{"none", []WorkItemWidget{dates("", "")}, "2026-01-10", "2026-01-11", true, true},
+		{"no widget", nil, "2026-01-10", "2026-01-11", true, true},
+		{"due only", []WorkItemWidget{dates("", "2026-03-15")}, "2026-03-01", "2026-03-15", true, false},
+		{"start only", []WorkItemWidget{dates("2026-03-01", "")}, "2026-03-01", "2026-03-15", false, true},
+		{"inverted", []WorkItemWidget{dates("2026-03-10", "2026-03-01")}, "2026-03-10", "2026-03-11", false, false},
+		{"same day", []WorkItemWidget{dates("2026-03-10", "2026-03-10")}, "2026-03-10", "2026-03-11", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			start, end := extractDates([]WorkItemWidget{tc.widget}, fixedNow)
+			start, end, noStart, noDue := extractDates(tc.widgets, fixedNow)
 			if start != tc.wantStart || end != tc.wantEnd {
 				t.Fatalf("got %s..%s, want %s..%s", start, end, tc.wantStart, tc.wantEnd)
 			}
+			if noStart != tc.wantNoStart || noDue != tc.wantNoDue {
+				t.Fatalf("got noStart=%v noDue=%v, want %v %v", noStart, noDue, tc.wantNoStart, tc.wantNoDue)
+			}
 		})
+	}
+}
+
+func TestMissingDatesAreFlagged(t *testing.T) {
+	tree := mustBuild(t, []WorkItemNode{
+		node("undated", "Epic", "OPEN"),
+		node("child", "Issue", "OPEN", parent("undated"), dates("2026-02-01", "2026-02-10")),
+	}, []Milestone{
+		{ID: "ms-undated", Title: "No dates"},
+		{ID: "ms-dated", Title: "Dated", StartDate: "2026-02-01", DueDate: "2026-02-28"},
+	})
+
+	byID := map[string]model.GanttTask{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			byID[task.ID] = task
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+	want := map[string]struct {
+		start, end     string
+		noStart, noDue bool
+	}{
+		// Undated rows sit on today only, whatever their children's dates.
+		"undated":    {"2026-01-10", "2026-01-11", true, true},
+		"child":      {"2026-02-01", "2026-02-10", false, false},
+		"ms-undated": {"2026-01-10", "2026-01-11", true, true},
+		"ms-dated":   {"2026-02-01", "2026-02-28", false, false},
+	}
+	for id, w := range want {
+		got := byID[id]
+		if got.Start != w.start || got.End != w.end || got.NoStartDate != w.noStart || got.NoDueDate != w.noDue {
+			t.Errorf("%s = %s..%s noStart=%v noDue=%v, want %s..%s %v %v",
+				id, got.Start, got.End, got.NoStartDate, got.NoDueDate, w.start, w.end, w.noStart, w.noDue)
+		}
 	}
 }
 
