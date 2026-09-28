@@ -10,7 +10,11 @@ import { GanttTask, Label } from './types/gantt';
 import { ColorSchemeContext, useAppearance } from './utils/appearance';
 import { withoutClosed } from './utils/flatten';
 import { EMPTY_FILTERS, Filters, applyFilters, labelOptions } from './utils/filters';
-import { useStoredBoolean } from './utils/preferences';
+import { useStoredBoolean, useStoredValue } from './utils/preferences';
+import { DEFAULT_PRESET, PERIOD_PRESETS, PeriodPreset, periodLabel, periodRange, withinPeriod } from './utils/period';
+
+const PRESET_VALUES = PERIOD_PRESETS.map((p) => p.value);
+const suggestedViewMode = (preset: PeriodPreset) => PERIOD_PRESETS.find((p) => p.value === preset)?.viewMode;
 
 export const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -19,7 +23,10 @@ export const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Week);
+  // The period shown: a remembered preset, moved by the ‹ › arrows (not remembered).
+  const [preset, setPreset] = useStoredValue<PeriodPreset>('nornir.period', DEFAULT_PRESET, PRESET_VALUES);
+  const [periodOffset, setPeriodOffset] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => suggestedViewMode(preset) ?? ViewMode.Week);
   const chart = useRef<GanttChartHandle>(null);
   const { appearance, scheme, setAppearance } = useAppearance();
   // Closed items are hidden unless the user asks for them (remembered).
@@ -50,15 +57,29 @@ export const App: React.FC = () => {
     void load();
   }, [load]);
 
-  // data → closed items hidden (unless shown) → filters.
+  const changePreset = (next: PeriodPreset) => {
+    setPreset(next);
+    setPeriodOffset(0);
+    // A period comes with the time scale that suits it; the user can still change it.
+    const mode = suggestedViewMode(next);
+    if (mode) setViewMode(mode);
+  };
+  const today = new Date().toDateString();
+  const period = { preset, offset: periodOffset };
+  // Recomputed when the day changes.
+  const range = useMemo(() => periodRange({ preset, offset: periodOffset }, new Date()), [preset, periodOffset, today]);
+
+  // data → closed items hidden (unless shown) → period → filters.
   const openData = useMemo(() => (data && !showClosed ? withoutClosed(data) : data), [data, showClosed]);
-  const filtered = useMemo(() => (openData ? applyFilters(openData, deferredFilters) : null), [openData, deferredFilters]);
+  const inPeriod = useMemo(() => (openData ? withinPeriod(openData, range) : null), [openData, range]);
+  const filtered = useMemo(() => (inPeriod ? applyFilters(inPeriod, deferredFilters) : null), [inPeriod, deferredFilters]);
   const labels = useMemo(() => labelOptions(groupLabels, openData ?? []), [groupLabels, openData]);
 
   const hasOpenItems = !!openData && openData.length > 0;
   const hasItems = !!filtered && filtered.length > 0;
   const allClosed = !!data && data.length > 0 && !hasOpenItems;
-  const noMatch = hasOpenItems && !hasItems;
+  const emptyPeriod = hasOpenItems && !!inPeriod && inPeriod.length === 0;
+  const noMatch = hasOpenItems && !emptyPeriod && !hasItems;
 
   return (
     <ColorSchemeContext.Provider value={scheme}>
@@ -66,11 +87,19 @@ export const App: React.FC = () => {
         config={config}
         lastUpdated={lastUpdated}
         loading={loading}
+        preset={preset}
+        periodLabel={periodLabel(period, new Date())}
+        onPresetChange={changePreset}
+        onPeriodStep={(step) => setPeriodOffset((offset) => offset + step)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        onToday={() => chart.current?.scrollToToday()}
+        onToday={() => {
+          // Back to the current period; the chart centers on today once it shows it.
+          if (periodOffset !== 0) setPeriodOffset(0);
+          else chart.current?.scrollToToday();
+        }}
         onRefresh={() => void load(true)}
-        chartReady={hasItems}
+        chartReady={hasItems || periodOffset !== 0}
         appearance={appearance}
         onAppearanceChange={setAppearance}
         showClosed={showClosed}
@@ -95,6 +124,17 @@ export const App: React.FC = () => {
             }
           />
         )}
+        {emptyPeriod && (
+          <EmptyState
+            title="Nothing in this period"
+            message="No item has dates in this period."
+            action={
+              <button type="button" className="button" onClick={() => changePreset('all')}>
+                Show all dates
+              </button>
+            }
+          />
+        )}
         {noMatch && (
           <EmptyState
             title="No matching items"
@@ -108,7 +148,7 @@ export const App: React.FC = () => {
         )}
         {/* Stays mounted while the filters match nothing (it renders nothing then), so the
             expanded rows survive until the filters are cleared. */}
-        {hasOpenItems && filtered && <GanttChart ref={chart} data={filtered} viewMode={viewMode} />}
+        {hasOpenItems && filtered && <GanttChart ref={chart} data={filtered} viewMode={viewMode} range={range} />}
       </main>
     </ColorSchemeContext.Provider>
   );

@@ -52,6 +52,12 @@ function luminance(hex: string) {
 
 const EPIC_BAND = 'rgba(0, 122, 255, 0.1)'; // epic color (systemBlue) at 10%, light appearance
 
+// These tests predate the period selector and use fixed dates: show every date, whatever
+// today is (the period has its own tests in period.mocked.spec.ts).
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('nornir.period', 'all'));
+});
+
 test.describe('Gantt (mocked API)', () => {
   test('shows the configured group and only the collapsed top-level rows', async ({ page }) => {
     await mockApi(page);

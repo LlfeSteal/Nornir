@@ -3,7 +3,9 @@ import { ViewMode } from 'gantt-task-react';
 import { AppConfig } from '../api/gantt';
 import { SegmentedControl } from './SegmentedControl';
 import { AppearanceMenu } from './AppearanceMenu';
+import { PeriodControl } from './PeriodControl';
 import { Appearance } from '../utils/appearance';
+import { PeriodPreset } from '../utils/period';
 import { ClosedIcon, RefreshIcon, TimelineIcon, TodayIcon } from './Icons';
 
 export const VIEW_MODES: { label: string; value: ViewMode }[] = [
@@ -16,6 +18,10 @@ interface Props {
   config: AppConfig | null;
   lastUpdated: Date | null;
   loading: boolean;
+  preset: PeriodPreset;
+  periodLabel: string;
+  onPresetChange: (preset: PeriodPreset) => void;
+  onPeriodStep: (step: -1 | 1) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   onToday: () => void;
@@ -33,6 +39,10 @@ export const Toolbar: React.FC<Props> = ({
   config,
   lastUpdated,
   loading,
+  preset,
+  periodLabel,
+  onPresetChange,
+  onPeriodStep,
   viewMode,
   onViewModeChange,
   onToday,
@@ -66,6 +76,7 @@ export const Toolbar: React.FC<Props> = ({
       </div>
     </div>
     <div className="toolbar-actions">
+      <PeriodControl preset={preset} label={periodLabel} onPresetChange={onPresetChange} onStep={onPeriodStep} />
       <SegmentedControl label="Time scale" options={VIEW_MODES} value={viewMode} onChange={onViewModeChange} />
       <button
         type="button"

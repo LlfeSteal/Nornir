@@ -3,6 +3,7 @@ import { Task } from 'gantt-task-react';
 import { FlatGanttTask } from '../utils/flatten';
 import { ChevronIcon, WarningIcon } from './Icons';
 import { missingDatesMessage, scheduleLabel, scheduleStatus } from '../utils/schedule';
+import { parseDay } from '../utils/today';
 
 // Replacements for gantt-task-react's list and tooltip: the list shows only the item
 // names (no From/To columns), and the dates move to the tooltip shown on a bar.
@@ -112,7 +113,8 @@ export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily
     <div className="gantt-tooltip" data-status={status} data-undated={missingDates ? 'true' : undefined}>
       <strong>{task.name}</strong>
       <p>
-        From {formatDay(task.start)} to {formatDay(task.end)}
+        {/* The real dates: the bar may be cut at the edges of the period shown. */}
+        From {formatDay(row ? parseDay(row.start) : task.start)} to {formatDay(row ? parseDay(row.end) : task.end)}
       </p>
       <p>{progress}% complete</p>
       {closed && (

@@ -56,3 +56,39 @@ export function columnsBetween(from: Date, to: Date, viewMode: ViewMode): number
       return Math.ceil((to.getTime() - from.getTime()) / DAY_MS);
   }
 }
+
+/** Exact number of columns from the column holding `from` to the one holding `to` (0 when
+ * `to` is not after `from`). */
+export function columnSteps(from: Date, to: Date, viewMode: ViewMode): number {
+  const a = columnStart(from, viewMode);
+  const b = columnStart(to, viewMode);
+  if (b <= a) return 0;
+  switch (viewMode) {
+    case ViewMode.Week:
+      return Math.round((b.getTime() - a.getTime()) / (7 * DAY_MS));
+    case ViewMode.Month:
+      return (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+    default:
+      return Math.round((b.getTime() - a.getTime()) / DAY_MS);
+  }
+}
+
+/** "YYYY-MM-DD" → local midnight (new Date("YYYY-MM-DD") would be parsed as UTC). */
+export function parseDay(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** The library's `preStepsCount` that makes its date range start with the column holding
+ * `from`, when its earliest visible bar starts on `earliest`. The library crashes when a bar
+ * starts exactly on its first date: then one step more. In Month view it moves back by whole
+ * months keeping the day of the month, which overflows (May 31 − 1 month → "April 31" =
+ * May 1): then one step more too. */
+export function preStepsTo(from: Date, earliest: Date, viewMode: ViewMode): number {
+  const steps = columnSteps(from, earliest, viewMode);
+  if (steps === 0 && earliest.getTime() === columnStart(earliest, viewMode).getTime()) return 1;
+  if (viewMode !== ViewMode.Month) return steps;
+  const month = earliest.getMonth() - steps;
+  const landed = new Date(earliest.getFullYear(), month, earliest.getDate());
+  return landed.getMonth() === new Date(earliest.getFullYear(), month, 1).getMonth() ? steps : steps + 1;
+}

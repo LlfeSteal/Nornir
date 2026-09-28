@@ -3,6 +3,11 @@ import { expect, test } from '@playwright/test';
 // End-to-end test against the real backend (and so the real GitLab configured in .env).
 // It assumes nothing about the group's content, only that loading succeeds.
 test.describe('Gantt (real backend) @live', () => {
+  // Every date: the group may have nothing in the default period.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('nornir.period', 'all'));
+  });
+
   test('loads the configured group Gantt without error', async ({ page, request }) => {
     const configResponse = await request.get('/api/config');
     expect(configResponse.ok()).toBeTruthy();

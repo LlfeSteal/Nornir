@@ -58,3 +58,26 @@ export async function mockApi(
   });
   return ganttCalls;
 }
+
+// Items spread over several years, for the period selector (tests run on 2026-10-15). The
+// long epic crosses into 2027 and its only issue is in 2027; the current epic has an issue
+// left over in 2025.
+export const periodTree = [
+  { id: 'M9', name: '[Milestone] Q4 sprint', type: 'milestone', start: '2026-10-01', end: '2026-12-31', progress: 0, linearProgress: 15 },
+  {
+    id: 'E9', name: 'Old epic', type: 'epic', start: '2025-02-01', end: '2025-06-30', progress: 100, linearProgress: 100,
+    children: [{ id: 'I9', name: 'Old issue', type: 'issue', start: '2025-03-01', end: '2025-03-20', progress: 100, linearProgress: 100 }],
+  },
+  {
+    id: 'E10', name: 'Current epic', type: 'epic', start: '2026-09-01', end: '2026-11-30', progress: 50, linearProgress: 50,
+    children: [
+      { id: 'I10', name: 'Current issue', type: 'issue', start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 70 },
+      { id: 'I11', name: 'Stale issue', type: 'issue', start: '2025-05-01', end: '2025-05-15', progress: 0, linearProgress: 100 },
+    ],
+  },
+  {
+    id: 'E11', name: 'Long epic', type: 'epic', start: '2026-06-01', end: '2027-03-31', progress: 40, linearProgress: 45,
+    children: [{ id: 'I12', name: 'Next year issue', type: 'issue', start: '2027-02-01', end: '2027-02-20', progress: 0, linearProgress: 0 }],
+  },
+  { id: 'E12', name: 'Future epic', type: 'epic', start: '2027-05-01', end: '2027-08-31', progress: 0, linearProgress: 0 },
+];

@@ -29,6 +29,12 @@ export const ChevronIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const ChevronLeftIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M15 6l-6 6 6 6" />
+  </Icon>
+);
+
 export const RefreshIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M20 11a8 8 0 1 0-2.3 5.7" />

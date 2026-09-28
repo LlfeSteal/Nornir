@@ -4,7 +4,8 @@ import 'gantt-task-react/dist/index.css';
 import { GanttTask } from '../types/gantt';
 import { FlatGanttTask, flattenGanttTree, visibleRows } from '../utils/flatten';
 import { RowInfoContext, TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
-import { columnFraction, columnsBetween } from '../utils/today';
+import { columnFraction, columnsBetween, preStepsTo } from '../utils/today';
+import { clipBar, DateRange } from '../utils/period';
 import { groupBand, muted, PALETTES } from '../utils/colors';
 import { useColorScheme } from '../utils/appearance';
 import { missingDatesMessage, scheduleStatus } from '../utils/schedule';
@@ -12,6 +13,8 @@ import { missingDatesMessage, scheduleStatus } from '../utils/schedule';
 interface Props {
   data: GanttTask[];
   viewMode: ViewMode;
+  /** The period shown (bars are cut at its edges), or null for every date. */
+  range: DateRange | null;
 }
 
 export interface GanttChartHandle {
@@ -98,15 +101,20 @@ function drawTodayPill(root: HTMLElement, x: number) {
 // library's `viewDate` prop can't do it reliably: it resolves the date against stale
 // columns when the date range changes in the same render (first render, collapsed rows).
 // So we drive the library's own horizontal scrollbar, which it listens to via onScroll.
-function scrollParts(root: HTMLElement) {
-  const line = root.querySelector<SVGLineElement>('line.today-line');
+function timelineParts(root: HTMLElement) {
   // The library's scrollbar is the only horizontally scrollable element; the chart itself
   // sits in an overflow-hidden container the library scrolls to match it.
   const scrollbar = [...root.querySelectorAll<HTMLElement>('div')].find((div) =>
     ['auto', 'scroll'].includes(getComputedStyle(div).overflowX),
   );
-  const container = line?.ownerSVGElement?.parentElement?.parentElement;
-  return line && scrollbar && container ? { line, scrollbar, container } : null;
+  const container = root.querySelector<SVGGElement>('g.rows')?.ownerSVGElement?.parentElement?.parentElement;
+  return scrollbar && container ? { scrollbar, container } : null;
+}
+
+function scrollParts(root: HTMLElement) {
+  const line = root.querySelector<SVGLineElement>('line.today-line');
+  const parts = timelineParts(root);
+  return line && parts ? { line, ...parts } : null;
 }
 
 /** Scrolls so that the today line sits `offset` px from the left of the visible area
@@ -114,9 +122,16 @@ function scrollParts(root: HTMLElement) {
 function keepTodayLineAt(root: HTMLElement, offset?: number) {
   const parts = scrollParts(root);
   if (!parts) return;
-  const { line, scrollbar, container } = parts;
+  const { line, container } = parts;
   const want = offset ?? container.clientWidth / 2;
-  const target = Math.max(0, Math.round(Number(line.getAttribute('x1')) - want));
+  scrollTimelineTo(root, Math.max(0, Math.round(Number(line.getAttribute('x1')) - want)));
+}
+
+/** Scrolls the timeline to `target` px from its start. */
+function scrollTimelineTo(root: HTMLElement, target: number) {
+  const parts = timelineParts(root);
+  if (!parts) return;
+  const { scrollbar, container } = parts;
   if (Math.abs(scrollbar.scrollLeft - target) > 1) {
     scrollbar.scrollLeft = target;
   } else if (Math.abs(container.scrollLeft - scrollbar.scrollLeft) > 1) {
@@ -141,11 +156,12 @@ function paintGroupBands(root: HTMLElement, rows: FlatGanttTask[]) {
 // (computed by the backend). The library can't draw it, so it is added next to the track
 // (`._2RbVy`, first rect of a project bar `._1KJ6x`), before the progress rect so the solid
 // progress stays on top. Bars sit in their row: row index = floor(y / ROW_HEIGHT).
-function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[]) {
+function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[], barLinear: Map<string, number>) {
   root.querySelectorAll<SVGRectElement>('._1KJ6x > rect._2RbVy').forEach((track) => {
     const row = rows[Math.floor(Number(track.getAttribute('y')) / ROW_HEIGHT)];
     let linear = track.parentElement!.querySelector<SVGRectElement>('rect.linear-progress');
-    if (!row || row.closed || missingDatesMessage(row) || !(row.linearProgress > 0)) {
+    const progress = row ? barLinear.get(row.id) ?? row.linearProgress : 0;
+    if (!row || row.closed || missingDatesMessage(row) || !(progress > 0)) {
       linear?.remove();
       return;
     }
@@ -154,7 +170,7 @@ function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[]) {
       linear.setAttribute('class', 'linear-progress');
       track.after(linear);
     }
-    const width = Number(track.getAttribute('width')) * Math.min(100, row.linearProgress) / 100;
+    const width = Number(track.getAttribute('width')) * Math.min(100, progress) / 100;
     setAttributes(linear, {
       x: track.getAttribute('x') ?? '0',
       y: track.getAttribute('y') ?? '0',
@@ -208,11 +224,11 @@ function setFlag(element: Element, name: string, on: boolean) {
 
 const CENTERING_MS = 500;
 
-/** Keeps the today line at `offset` (see keepTodayLineAt) for a short while, as the library
- * settles over a few renders. Returns a function that stops it. */
-function startKeepingTodayLine(root: HTMLElement, offset: number | undefined, onEnd: () => void): () => void {
+/** Repeats a scroll step (e.g. keeping the today line in place, see keepTodayLineAt) for a
+ * short while, as the library settles over a few renders. Returns a function that stops it. */
+function startScrollLoop(scrollStep: () => void, onEnd: () => void): () => void {
   let frame = requestAnimationFrame(function step() {
-    keepTodayLineAt(root, offset);
+    scrollStep();
     frame = requestAnimationFrame(step);
   });
   const stop = setTimeout(() => {
@@ -226,13 +242,7 @@ function startKeepingTodayLine(root: HTMLElement, offset: number | undefined, on
   };
 }
 
-// "YYYY-MM-DD" → local midnight (new Date("YYYY-MM-DD") would be parsed as UTC).
-function parseDay(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
-export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode }, ref) {
+export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode, range }, ref) {
   const scheme = useColorScheme();
   // Groups are collapsed unless expanded by the user: everything starts collapsed,
   // including groups that appear after a refresh.
@@ -242,38 +252,58 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
   // The chart element only exists when there is something to show.
   const hasTasks = data.length > 0;
 
-  // One scroll loop at a time: centering on today, or keeping the view in place.
+  // One scroll loop at a time: centering on today, going to the period start, or keeping
+  // the view in place.
   const scrollLoop = useRef<{ stop: () => void } | null>(null);
-  const keepTodayLine = useCallback((offset?: number) => {
+  const runScrollLoop = useCallback((step: (element: HTMLElement) => void) => {
     scrollLoop.current?.stop();
     const element = chartRef.current;
     if (!element) return;
     const loop = {
-      stop: startKeepingTodayLine(element, offset, () => {
-        if (scrollLoop.current === loop) scrollLoop.current = null;
-      }),
+      stop: startScrollLoop(
+        () => step(element),
+        () => {
+          if (scrollLoop.current === loop) scrollLoop.current = null;
+        },
+      ),
     };
     scrollLoop.current = loop;
   }, []);
+  const keepTodayLine = useCallback(
+    (offset?: number) => runScrollLoop((element) => keepTodayLineAt(element, offset)),
+    [runScrollLoop],
+  );
   useEffect(() => () => scrollLoop.current?.stop(), []);
 
-  // Centers on today when the chart appears and when the view mode changes.
+  // Centers on today when the chart appears and when the view mode or the period changes;
+  // a period without today (in the past or the future) is shown from its start.
+  const periodKey = range ? range.from.getTime() : 0;
+  const rangeRef = useRef(range);
+  rangeRef.current = range;
   useEffect(() => {
-    keepTodayLine();
-  }, [viewMode, hasTasks, keepTodayLine]);
+    const period = rangeRef.current;
+    const now = new Date();
+    if (!period || (now >= period.from && now < period.to)) keepTodayLine();
+    else runScrollLoop((element) => scrollTimelineTo(element, 0));
+  }, [viewMode, hasTasks, periodKey, keepTodayLine, runScrollLoop]);
 
   const scrollToToday = useCallback(() => keepTodayLine(), [keepTodayLine]);
   useImperativeHandle(ref, () => ({ scrollToToday }), [scrollToToday]);
 
   // Where the today line was last drawn, to notice when the date range changes.
-  const lastLine = useRef<{ x: number; viewMode: ViewMode } | null>(null);
+  const lastLine = useRef<{ x: number; viewMode: ViewMode; periodKey: number } | null>(null);
 
-  const { tasks, urls, rowInfo, shownRows } = useMemo(() => {
+  const { tasks, urls, rowInfo, barLinear, shownRows } = useMemo(() => {
     const flatItems = flattenGanttTree(data);
     const urls = new Map<string, string>();
     const rowInfo = new Map(flatItems.map((item) => [item.id, item]));
+    // Linear progress as a fraction of the (possibly cut) bar, for paintLinearProgress.
+    const barLinear = new Map<string, number>();
     const tasks: Task[] = flatItems.map((item) => {
       if (item.webUrl) urls.set(item.id, item.webUrl);
+      // Cut at the period's edges; the tooltip shows the real dates (from RowInfoContext).
+      const bar = clipBar(item, range);
+      barLinear.set(item.id, bar.linearProgress);
       // Children are drawn toned down compared to the top-level bars they belong to.
       const palette = PALETTES[scheme];
       const shade = (color: string) => (item.depth > 0 ? muted(color, scheme) : color);
@@ -289,14 +319,14 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
           : palette.types[item.type],
       );
       return {
-        start: parseDay(item.start),
-        end: parseDay(item.end),
+        start: bar.start,
+        end: bar.end,
         name: item.name,
         id: item.id,
         type: isGroup ? 'project' : 'task',
         // A closed row is drawn as one full hatched bar; its real progress stays in the
         // tooltip (read from RowInfoContext).
-        progress: item.closed ? 100 : item.progress || 0,
+        progress: item.closed ? 100 : bar.progress,
         project: item.parent,
         hideChildren: isGroup ? !expanded.has(item.id) : undefined,
         styles: item.closed
@@ -312,8 +342,8 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
             },
       };
     });
-    return { tasks, urls, rowInfo, shownRows: visibleRows(flatItems, expanded) };
-  }, [data, expanded, scheme]);
+    return { tasks, urls, rowInfo, barLinear, shownRows: visibleRows(flatItems, expanded) };
+  }, [data, expanded, scheme, range]);
 
   // The card grows with its rows, up to the bottom of the page content (which stretches to
   // the window bottom, see theme.css); beyond that, the rows scroll inside it. The space is
@@ -356,31 +386,41 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
           previousX !== undefined &&
           x !== previousX &&
           lastLine.current?.viewMode === viewMode &&
+          lastLine.current.periodKey === periodKey &&
           !scrollLoop.current
         ) {
           keepTodayLine(previousX - after.container.scrollLeft);
         }
-        lastLine.current = { x, viewMode };
+        lastLine.current = { x, viewMode, periodKey };
       }
       paintGroupBands(element, shownRows);
-      paintLinearProgress(element, shownRows);
+      paintLinearProgress(element, shownRows, barLinear);
       markBars(element, shownRows);
     };
     draw();
     const observer = new MutationObserver(draw);
     observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'y', 'width', 'height', 'fill'] });
     return () => observer.disconnect();
-  }, [viewMode, hasTasks, shownRows, keepTodayLine]);
+  }, [viewMode, hasTasks, shownRows, barLinear, periodKey, keepTodayLine]);
 
-  // The date range starts preStepsCount columns before the earliest visible item: make it
-  // start early enough to show today in the middle of the screen, even when every item is
-  // in the future.
+  // The date range starts preStepsCount columns before the earliest visible item. With a
+  // period, make it start with the period, even when the items start later. Otherwise make
+  // it start early enough to show today in the middle of the screen, even when every item
+  // is in the future.
   const todayKey = new Date().toDateString();
   const preStepsCount = useMemo(() => {
+    if (range) {
+      const shown = new Set(shownRows.map((row) => row.id));
+      const earliest = tasks.reduce(
+        (first, t) => (shown.has(t.id) && t.start < first ? t.start : first),
+        range.to,
+      );
+      return preStepsTo(range.from, earliest, viewMode);
+    }
     const halfScreen = Math.ceil(window.innerWidth / columnWidth / 2);
     const latestStart = tasks.reduce((latest, t) => (t.start > latest ? t.start : latest), new Date(0));
     return halfScreen + columnsBetween(new Date(), latestStart, viewMode) + 1;
-  }, [tasks, todayKey, viewMode, columnWidth]);
+  }, [tasks, shownRows, range, todayKey, viewMode, columnWidth]);
 
   const toggle = (task: Task) => {
     setExpanded((prev) => {
