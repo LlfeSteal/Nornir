@@ -126,6 +126,8 @@ button { font: inherit; color: inherit; }
 .button:disabled { opacity: 0.5; cursor: default; transform: none; }
 .button.icon { width: 28px; padding: 0; justify-content: center; }
 .button[aria-pressed='true'] { background: var(--fill-pressed); color: var(--blue); }
+.button.plain { background: none; color: var(--blue); padding: 0 8px; }
+.button.plain:hover { background: var(--fill); }
 .button.primary { background: var(--blue); color: #fff; }
 .button.primary:hover { background: color-mix(in srgb, var(--blue) 88%, #000); }
 .spin { animation: spin 0.9s linear infinite; }
@@ -315,3 +317,62 @@ button { font: inherit; color: inherit; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--blue); color: #fff; outline: none; }
 .menu-item .check { margin-left: auto; visibility: hidden; }
 .menu-item[aria-checked='true'] .check { visibility: visible; }
+
+/* ---------- Filter bar ---------- */
+.filter-bar { position: relative; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.search-field {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  width: 240px; height: 28px; padding: 0 8px; border-radius: 8px;
+  background: var(--fill); color: var(--text-secondary);
+  transition: box-shadow 0.15s var(--ease);
+}
+.search-field:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 45%, transparent); }
+.search-field svg { flex: none; }
+.search-field input, .menu-search input {
+  flex: 1; min-width: 0; height: 100%; border: 0; padding: 0; background: none;
+  font: inherit; font-size: 13px; color: var(--text); outline: none;
+}
+.search-field input::placeholder, .menu-search input::placeholder { color: var(--text-secondary); }
+.search-clear {
+  display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0;
+  background: none; color: var(--text-tertiary); cursor: pointer; border-radius: 50%;
+}
+.search-clear:hover { color: var(--text-secondary); }
+
+/* Item types to show: a multiple-choice segmented control, pressed segments raised */
+.toggle-group { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--fill); }
+.toggle-group button {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px;
+  border: 0; border-radius: 6px; background: none; font-size: 13px; font-weight: 500;
+  color: var(--text-secondary); cursor: pointer; transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.toggle-group button:hover { color: var(--text); }
+.toggle-group button[aria-pressed='true'] {
+  background: var(--segment-thumb); color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+.type-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+
+/* Pop-up buttons: the selection replaces the title, tinted while a filter is set */
+.popup-button { gap: 4px; padding: 0 8px 0 12px; }
+.popup-button svg { color: var(--text-secondary); }
+.popup-button-text { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup-button[data-active] { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
+.popup-button[data-active] svg { color: inherit; }
+
+/* Filter popover: same material as the appearance menu, anchored on the left */
+.filter-popover { left: 0; right: auto; width: 290px; transform-origin: top left; }
+.menu-search {
+  display: flex; align-items: center; gap: 6px; height: 28px; margin: 0 0 5px; padding: 0 8px;
+  border-radius: 6px; background: var(--fill); color: var(--text-secondary);
+}
+.filter-options { max-height: 320px; overflow-y: auto; scrollbar-width: thin; }
+.filter-options .menu-header:not(:first-child) { margin-top: 4px; padding-top: 8px; border-top: 0.5px solid var(--separator); }
+.filter-popover .menu-item .check { margin-left: 0; flex: none; }
+.filter-popover .menu-item[aria-selected='true'] .check { visibility: visible; }
+.menu-item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item-detail { flex: none; font-size: 12px; color: var(--text-secondary); }
+.menu-item:hover .menu-item-detail, .menu-item:focus-visible .menu-item-detail { color: inherit; opacity: 0.8; }
+.label-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2); }
+.menu-empty { padding: 8px; font-size: 13px; color: var(--text-secondary); text-align: center; }
+.menu-footer { margin-top: 5px; padding-top: 5px; border-top: 0.5px solid var(--separator); }

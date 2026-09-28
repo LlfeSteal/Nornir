@@ -646,6 +646,243 @@ test.describe('Gantt (mocked API)', () => {
     });
   });
 
+  test.describe('filters', () => {
+    /** Names of the visible list rows, in order. */
+    async function rowNames(page: Page) {
+      return page.locator('.task-list-row .task-list-cell').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('title')));
+    }
+
+    /** Presses the toggle of an item type (Milestones, Epics, Issues). */
+    async function toggleType(page: Page, type: 'Milestones' | 'Epics' | 'Issues') {
+      await page.getByRole('group', { name: 'Show' }).getByRole('button', { name: type }).click();
+    }
+
+    /** Opens the Labels menu, toggles the given labels, and closes it. */
+    async function pickLabels(page: Page, ...labels: string[]) {
+      await page.getByRole('button', { name: /^Labels/ }).click();
+      const popover = page.getByRole('dialog', { name: 'Labels' });
+      for (const label of labels) await popover.getByRole('option', { name: label, exact: true }).click();
+      await page.keyboard.press('Escape');
+      await expect(popover).toHaveCount(0);
+    }
+
+    const expandRow = (page: Page, name: string) =>
+      page.getByTitle(name).first().locator('..').getByRole('button', { name: 'Expand' }).click();
+
+    const TOP_ROWS = ['[Milestone] Sprint 1', 'Main epic', 'Child epic'];
+
+    test('Milestones shows only the milestones', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      await toggleType(page, 'Milestones');
+      await expect(page.getByRole('button', { name: 'Milestones' })).toHaveAttribute('aria-pressed', 'true');
+      await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1']);
+
+      // Pressing it again shows everything.
+      await toggleType(page, 'Milestones');
+      await expect.poll(() => rowNames(page)).toEqual(TOP_ROWS);
+    });
+
+    test('Epics with a label shows those epics, each with its whole content', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      await toggleType(page, 'Epics');
+      await pickLabels(page, 'team-a');
+      await expect(page.getByRole('button', { name: 'Labels: team-a' })).toHaveAttribute('data-active', 'true');
+      await expect.poll(() => rowNames(page)).toEqual(['Main epic']);
+
+      // Its children show up too, although they don't carry the label.
+      await expandRow(page, 'Main epic');
+      await expect.poll(() => rowNames(page)).toEqual(['Main epic', 'Shared issue', 'Standalone issue', 'Child epic']);
+    });
+
+    test('an epic nested in another one is listed once', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      await toggleType(page, 'Epics');
+      await pickLabels(page, 'backend');
+      await expect.poll(() => rowNames(page)).toEqual(['Child epic']);
+    });
+
+    test('Issues are listed flat, once each', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      // "Shared issue" sits under Sprint 1 and under Main epic, "Deep issue" under both copies
+      // of Child epic: each is listed once.
+      await toggleType(page, 'Issues');
+      await expect.poll(() => rowNames(page)).toEqual(['Shared issue', 'Standalone issue', 'Deep issue']);
+
+      await pickLabels(page, 'frontend');
+      await expect.poll(() => rowNames(page)).toEqual(['Standalone issue', 'Deep issue']);
+    });
+
+    test('a label alone shows every kind of item carrying it, milestones by their content', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      // Milestones first, then epics, then issues. Sprint 1 holds a "backend" issue.
+      await pickLabels(page, 'backend');
+      await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1', 'Child epic', 'Shared issue']);
+
+      // Any of the labels: "bug" adds Deep issue.
+      await pickLabels(page, 'bug');
+      await expect(page.getByRole('button', { name: 'Labels: 2 labels' })).toBeVisible();
+      await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1', 'Child epic', 'Shared issue', 'Deep issue']);
+    });
+
+    test('search finds items of every type by name', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      // Case and accents don't matter.
+      await page.getByRole('textbox', { name: 'Search' }).fill('ÉPIC');
+      await expect.poll(() => rowNames(page)).toEqual(['Main epic', 'Child epic']);
+      await page.getByRole('textbox', { name: 'Search' }).fill('shared');
+      await expect.poll(() => rowNames(page)).toEqual(['Shared issue']);
+
+      // Combined with a type.
+      await page.getByRole('textbox', { name: 'Search' }).fill('i');
+      await toggleType(page, 'Milestones');
+      await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1']);
+
+      await page.getByRole('button', { name: 'Clear search' }).click();
+      await expect(page.getByRole('textbox', { name: 'Search' })).toHaveValue('');
+    });
+
+    test('an issue listed on its own and under its epic keeps separate rows', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      await toggleType(page, 'Epics');
+      await toggleType(page, 'Issues');
+      await expect
+        .poll(() => rowNames(page))
+        .toEqual(['Main epic', 'Child epic', 'Shared issue', 'Standalone issue', 'Deep issue']);
+
+      // Expanding the nested epic in Main epic doesn't expand the top-level Child epic.
+      await expandRow(page, 'Main epic');
+      await expandRow(page, 'Child epic');
+      await expect
+        .poll(() => rowNames(page))
+        .toEqual(['Main epic', 'Shared issue', 'Standalone issue', 'Child epic', 'Deep issue', 'Child epic', 'Shared issue', 'Standalone issue', 'Deep issue']);
+      await expect(page.locator('.task-list-row[data-expanded]')).toHaveCount(2);
+    });
+
+    test('expanded rows stay expanded through filtering', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expandRow(page, 'Main epic');
+      await expect(page.getByTitle('Standalone issue')).toBeVisible();
+
+      await toggleType(page, 'Epics');
+      await expect.poll(() => rowNames(page)).toEqual(['Main epic', 'Shared issue', 'Standalone issue', 'Child epic', 'Child epic']);
+
+      await page.getByRole('button', { name: 'Clear', exact: true }).click();
+      await expect
+        .poll(() => rowNames(page))
+        .toEqual(['[Milestone] Sprint 1', 'Main epic', 'Shared issue', 'Standalone issue', 'Child epic', 'Child epic']);
+    });
+
+    test('says so when nothing matches, and Clear filters shows everything again', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      // Sprint 1 holds no "bug" item.
+      await toggleType(page, 'Milestones');
+      await pickLabels(page, 'bug');
+      await expect(page.getByText('No matching items')).toBeVisible();
+      await expect(page.locator('.gantt-chart')).toHaveCount(0);
+
+      await page.getByRole('button', { name: 'Clear filters' }).click();
+      await expect.poll(() => rowNames(page)).toEqual(TOP_ROWS);
+      await expect(page.getByRole('button', { name: 'Milestones' })).toHaveAttribute('aria-pressed', 'false');
+      await expect(page.getByRole('button', { name: 'Labels', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0);
+    });
+
+    test('the Labels menu lists the labels in the chart first, then the other group labels', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Labels' }).click();
+      const popover = page.getByRole('dialog', { name: 'Labels' });
+
+      // "bug" only exists on an item (a project label); "security" is used by no item.
+      await expect(popover.locator('.menu-header, [role="option"]')).toHaveText([
+        'In this chart', 'backend', 'bug', 'frontend', 'team-a', 'Other labels', 'security',
+      ]);
+      // Each label shows its GitLab color.
+      await expect(popover.getByRole('option', { name: 'backend' }).locator('.label-dot')).toHaveCSS('background-color', 'rgb(66, 139, 202)');
+      // Short lists have no search field.
+      await expect(popover.getByRole('textbox')).toHaveCount(0);
+
+      // Escape closes it and gives the focus back to its button.
+      await page.keyboard.press('Escape');
+      await expect(popover).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Labels' })).toBeFocused();
+    });
+
+    test('long label lists can be searched', async ({ page }) => {
+      const many = Array.from({ length: 12 }, (_, i) => ({ title: `area::${i}`, color: '#6699cc' }));
+      await mockApi(page, undefined, { body: [...many, { title: 'security', color: '#330066' }] });
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Labels' }).click();
+      const popover = page.getByRole('dialog', { name: 'Labels' });
+      const search = popover.getByRole('textbox', { name: 'Search labels' });
+      await expect(search).toBeFocused();
+
+      await search.fill('SECU');
+      await expect(popover.getByRole('option')).toHaveText(['security']);
+      await search.fill('nothing like this');
+      await expect(popover.getByText('No match')).toBeVisible();
+
+      // ↓ from the search field goes to the options.
+      await search.fill('area::1');
+      await search.press('ArrowDown');
+      await expect(popover.getByRole('option', { name: 'area::1', exact: true })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(popover.getByRole('option', { name: 'area::1', exact: true })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    test('without the group labels, the menu still lists the labels of the items', async ({ page }) => {
+      await mockApi(page, undefined, { status: 500, body: { error: 'boom' } });
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+      await expect(page.getByRole('alert')).toHaveCount(0);
+
+      await page.getByRole('button', { name: 'Labels' }).click();
+      await expect(page.getByRole('dialog', { name: 'Labels' }).getByRole('option')).toHaveText(['backend', 'bug', 'frontend', 'team-a']);
+    });
+
+    test('the filter popover follows the dark appearance', async ({ page }) => {
+      await page.emulateMedia({ colorScheme: 'dark' });
+      await mockApi(page);
+      await page.goto('/');
+      await page.getByRole('button', { name: 'Labels' }).click();
+      const popover = page.getByRole('dialog', { name: 'Labels' });
+      await expect(popover).toBeVisible();
+      const [background, text] = await popover.getByRole('option', { name: 'backend' }).evaluate((option) => [
+        getComputedStyle(option.closest('.menu')!).backgroundColor,
+        getComputedStyle(option).color,
+      ]);
+      const channels = (color: string) => color.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+      const light = (color: string) => channels(color).reduce((a, b) => a + b, 0) / 3;
+      expect(light(background)).toBeLessThan(80);
+      expect(light(text)).toBeGreaterThan(200);
+    });
+  });
+
   test.describe('full height', () => {
     // Ten plain epics, then an epic whose 30 issues can't fit on screen once expanded.
     const tallTree = [
@@ -690,7 +927,7 @@ test.describe('Gantt (mocked API)', () => {
       const card = (await page.locator('.gantt-chart').boundingBox())!;
       const header = (await page.locator('.task-list-header').boundingBox())!;
       expect(card.height).toBeLessThan(header.height + (rows + 1) * (await rowHeight(page)) + 20);
-      expect(await gapBelowCard(page)).toBeGreaterThan(100);
+      expect(await gapBelowCard(page)).toBeGreaterThan(40); // well above the 16 px left when it is full
 
       // Too many rows: the card stops at the window bottom and the page doesn't scroll.
       await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();
@@ -738,7 +975,7 @@ test.describe('Gantt (mocked API)', () => {
       await expect(page.getByTitle('Epic 0')).toBeInViewport();
       await expect.poll(() => rowBarGap(page, 'Epic 0')).toBeLessThanOrEqual(2);
       // The card shrinks back to its rows.
-      await expect.poll(() => gapBelowCard(page)).toBeGreaterThan(100);
+      await expect.poll(() => gapBelowCard(page)).toBeGreaterThan(40);
       await expect.poll(() => rowBarGap(page, 'Big epic')).toBeLessThanOrEqual(2);
     });
 

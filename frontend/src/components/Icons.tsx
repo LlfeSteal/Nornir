@@ -90,3 +90,24 @@ export const ClosedIcon = (props: IconProps) => (
     <path d="M8.5 12.3l2.4 2.4 4.6-5" />
   </Icon>
 );
+
+export const SearchIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="10.5" cy="10.5" r="6.5" />
+    <path d="M15.5 15.5L20 20" />
+  </Icon>
+);
+
+/** Filled circle with a cross, like SF Symbols' xmark.circle.fill (clears a field). */
+export const ClearIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" />
+    <path d="M9 9l6 6M15 9l-6 6" stroke="var(--card)" strokeWidth={2} />
+  </Icon>
+);
+
+export const ChevronDownIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M7 10l5 5 5-5" strokeWidth={2} />
+  </Icon>
+);

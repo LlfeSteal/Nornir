@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -35,6 +36,7 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
           ... on WorkItemWidgetMilestone { milestone { id title state startDate dueDate webPath } }
           ... on WorkItemWidgetHierarchy { parent { id } }
           ... on WorkItemWidgetWeight { weight }
+          ... on WorkItemWidgetLabels { labels { nodes { id title color } } }
         }
       }
     }
@@ -48,6 +50,18 @@ const milestonesQuery = `query GetGroupMilestones($fullPath: ID!, $afterCursor: 
     milestones(first: 100, after: $afterCursor, includeAncestors: false) {
       pageInfo { hasNextPage endCursor }
       nodes { id title state startDate dueDate webPath }
+    }
+  }
+}`
+
+// Labels of the group and of its ancestors (project labels are only seen on the items).
+const labelsQuery = `query GetGroupLabels($fullPath: ID!, $afterCursor: String) {
+  group(fullPath: $fullPath) {
+    id
+    name
+    labels(first: 100, after: $afterCursor, includeAncestorGroups: true) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id title color }
     }
   }
 }`
@@ -83,6 +97,20 @@ func FetchGroupMilestones(ctx context.Context, baseURL, token, fullPath string) 
 	for i := range all {
 		all[i].WebURL = absoluteURL(baseURL, all[i].WebPath)
 	}
+	return all, err
+}
+
+// FetchGroupLabels returns the labels available in the group (its own and its
+// ancestors'), sorted by title.
+func FetchGroupLabels(ctx context.Context, baseURL, token, fullPath string) ([]Label, error) {
+	var all []Label
+	err := paginate(ctx, baseURL, token, labelsQuery, fullPath, func(g *GroupData) PageInfo {
+		all = append(all, g.Labels.Nodes...)
+		return g.Labels.PageInfo
+	})
+	sort.SliceStable(all, func(i, j int) bool {
+		return strings.ToLower(all[i].Title) < strings.ToLower(all[j].Title)
+	})
 	return all, err
 }
 

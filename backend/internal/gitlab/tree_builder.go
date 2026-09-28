@@ -16,6 +16,7 @@ const (
 	typenameMilestone = "WorkItemWidgetMilestone"
 	typenameHierarchy = "WorkItemWidgetHierarchy"
 	typenameWeight    = "WorkItemWidgetWeight"
+	typenameLabels    = "WorkItemWidgetLabels"
 
 	// defaultWeight is the weight of an item without a GitLab weight.
 	defaultWeight = 1
@@ -101,6 +102,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 				Start:  start,
 				End:    end,
 				WebURL: node.WebURL,
+				Labels: extractLabels(node.Widgets),
 			},
 			closed:            node.State == "CLOSED",
 			weight:            extractWeight(node.Widgets),
@@ -300,6 +302,20 @@ func extractWeight(widgets []WorkItemWidget) int {
 		}
 	}
 	return defaultWeight
+}
+
+// extractLabels returns the labels of an item, or nil when it has none.
+func extractLabels(widgets []WorkItemWidget) []model.Label {
+	var labels []model.Label
+	for _, w := range widgets {
+		if w.Typename != typenameLabels || w.Labels == nil {
+			continue
+		}
+		for _, l := range w.Labels.Nodes {
+			labels = append(labels, model.Label{Title: l.Title, Color: l.Color})
+		}
+	}
+	return labels
 }
 
 func extractHierarchyParentID(widgets []WorkItemWidget) string {

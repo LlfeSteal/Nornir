@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -432,5 +433,67 @@ func TestClosedItemsAndMilestonesAreFlagged(t *testing.T) {
 		if closed[id] != w {
 			t.Errorf("%s closed = %v, want %v", id, closed[id], w)
 		}
+	}
+}
+
+func labels(titles ...string) WorkItemWidget {
+	conn := &LabelConn{}
+	for _, title := range titles {
+		conn.Nodes = append(conn.Nodes, Label{ID: "label-" + title, Title: title, Color: "#" + title})
+	}
+	return WorkItemWidget{Typename: typenameLabels, Type: "LABELS", Labels: conn}
+}
+
+func TestLabelsAreSetOnEveryPlacement(t *testing.T) {
+	// "issue" sits under its epic and, as a `_ms_` copy, under Sprint 1; "sub" is a nested
+	// epic also listed at the top level (`_root_`).
+	tree := mustBuild(t, []WorkItemNode{
+		node("epic", "Epic", "OPEN", labels("team-a")),
+		node("sub", "Epic", "OPEN", parent("epic"), labels("team-b")),
+		node("issue", "Issue", "OPEN", parent("sub"), milestoneTitled("m1", "Sprint 1"), labels("backend", "bug")),
+		node("bare", "Issue", "OPEN"),
+	}, []Milestone{{ID: "m1", Title: "Sprint 1"}})
+
+	byID := map[string]model.GanttTask{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			byID[task.ID] = task
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+
+	titles := func(task model.GanttTask) []string {
+		out := []string{}
+		for _, l := range task.Labels {
+			out = append(out, l.Title)
+		}
+		return out
+	}
+	want := map[string][]string{
+		"m1":             {},
+		"epic":           {"team-a"},
+		"sub":            {"team-b"},
+		"issue":          {"backend", "bug"},
+		"issue_ms_issue": {"backend", "bug"},
+		"sub_root_sub":   {"team-b"},
+		"issue_root_sub": {"backend", "bug"},
+		"bare":           {},
+	}
+	for id, w := range want {
+		task, ok := byID[id]
+		if !ok {
+			t.Fatalf("%s not found in tree %v", id, ids(tree))
+		}
+		if got := titles(task); strings.Join(got, ",") != strings.Join(w, ",") {
+			t.Errorf("%s labels = %v, want %v", id, got, w)
+		}
+	}
+	if byID["issue"].Labels[0].Color != "#backend" {
+		t.Errorf("label color = %q, want #backend", byID["issue"].Labels[0].Color)
+	}
+	if byID["bare"].Labels != nil {
+		t.Errorf("an item without labels must have none, got %v", byID["bare"].Labels)
 	}
 }

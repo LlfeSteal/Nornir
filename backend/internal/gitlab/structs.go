@@ -14,6 +14,18 @@ type GroupData struct {
 	Name       string        `json:"name"`
 	WorkItems  WorkItemConn  `json:"workItems"`
 	Milestones MilestoneConn `json:"milestones"`
+	Labels     LabelConn     `json:"labels"`
+}
+
+type LabelConn struct {
+	PageInfo PageInfo `json:"pageInfo"`
+	Nodes    []Label  `json:"nodes"`
+}
+
+type Label struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Color string `json:"color"` // hex, e.g. "#428bca"
 }
 
 type MilestoneConn struct {
@@ -56,6 +68,7 @@ type WorkItemWidget struct {
 	Milestone *Milestone `json:"milestone,omitempty"`
 	Parent    *ParentRef `json:"parent,omitempty"`
 	Weight    *int       `json:"weight,omitempty"` // nil: no weight set in GitLab
+	Labels    *LabelConn `json:"labels,omitempty"`
 }
 
 type Milestone struct {

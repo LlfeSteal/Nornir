@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { GanttTask } from '../types/gantt';
+import { GanttTask, Label } from '../types/gantt';
 
 export interface AppConfig {
   group: string;
@@ -13,6 +13,14 @@ export async function fetchConfig(): Promise<AppConfig> {
 
 export async function fetchGantt(refresh = false): Promise<GanttTask[]> {
   const { data } = await axios.get<GanttTask[]>('/api/gantt', {
+    params: refresh ? { refresh: 1 } : undefined,
+  });
+  return data;
+}
+
+/** Labels of the group and of its ancestors, sorted by title. */
+export async function fetchLabels(refresh = false): Promise<Label[]> {
+  const { data } = await axios.get<Label[]>('/api/labels', {
     params: refresh ? { refresh: 1 } : undefined,
   });
   return data;

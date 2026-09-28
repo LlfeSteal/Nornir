@@ -58,19 +58,29 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"group": cfg.group, "gitlabUrl": cfg.gitlabURL})
 	})
 	r.GET("/api/gantt", cfg.handleGantt)
+	r.GET("/api/labels", cfg.handleLabels)
 
 	if err := r.Run(":" + cfg.port); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (cfg config) handleGantt(c *gin.Context) {
+// resolveToken returns the request's Authorization header, or GITLAB_TOKEN. When there is
+// neither, it answers 401 and returns "".
+func (cfg config) resolveToken(c *gin.Context) string {
 	token := c.GetHeader("Authorization")
 	if token == "" && cfg.token != "" {
 		token = "Bearer " + cfg.token
 	}
 	if token == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "no GitLab token: set GITLAB_TOKEN or send an Authorization header"})
+	}
+	return token
+}
+
+func (cfg config) handleGantt(c *gin.Context) {
+	token := cfg.resolveToken(c)
+	if token == "" {
 		return
 	}
 
@@ -108,6 +118,37 @@ func (cfg config) handleGantt(c *gin.Context) {
 
 	c.Header("X-Cache", "MISS")
 	c.JSON(http.StatusOK, tree)
+}
+
+// handleLabels lists the labels of the group (and of its ancestors), for the label filter.
+// Separate from /api/gantt: on large hierarchies it can take many pages.
+func (cfg config) handleLabels(c *gin.Context) {
+	token := cfg.resolveToken(c)
+	if token == "" {
+		return
+	}
+	cacheKey := "labels:" + tokenFingerprint(token) + ":" + cfg.group
+	if c.Query("refresh") != "1" {
+		if cached, found := appCache.Get(cacheKey); found {
+			c.Header("X-Cache", "HIT")
+			c.JSON(http.StatusOK, cached.([]model.Label))
+			return
+		}
+	}
+
+	labels, err := gitlab.FetchGroupLabels(c.Request.Context(), cfg.gitlabURL, token, cfg.group)
+	if err != nil {
+		respondGitLabError(c, err)
+		return
+	}
+	out := make([]model.Label, 0, len(labels))
+	for _, l := range labels {
+		out = append(out, model.Label{Title: l.Title, Color: l.Color})
+	}
+	appCache.Set(cacheKey, out, cache.DefaultExpiration)
+
+	c.Header("X-Cache", "MISS")
+	c.JSON(http.StatusOK, out)
 }
 
 func respondGitLabError(c *gin.Context, err error) {

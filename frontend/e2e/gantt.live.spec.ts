@@ -16,4 +16,17 @@ test.describe('Gantt (real backend) @live', () => {
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.locator('.gantt-chart')).toBeVisible();
   });
+
+  test("lists the group's labels and shows the filter bar", async ({ page, request }) => {
+    const labelsResponse = await request.get('/api/labels');
+    expect(labelsResponse.ok()).toBeTruthy();
+    const labels = await labelsResponse.json();
+    expect(Array.isArray(labels)).toBe(true);
+    for (const label of labels) expect(label).toEqual({ title: expect.any(String), color: expect.any(String) });
+
+    await page.goto('/');
+    await expect(page.getByRole('search', { name: 'Filters' })).toBeVisible();
+    await page.getByRole('button', { name: 'Labels' }).click();
+    await expect(page.getByRole('dialog', { name: 'Labels' })).toBeVisible();
+  });
 });
