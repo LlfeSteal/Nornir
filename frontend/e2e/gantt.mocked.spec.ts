@@ -711,9 +711,18 @@ test.describe('Gantt (mocked API)', () => {
       return page.locator('.task-list-row .task-list-cell').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('title')));
     }
 
-    /** Presses the toggle of an item type (Milestones, Epics, Issues). */
-    async function toggleType(page: Page, type: 'Milestones' | 'Epics' | 'Issues') {
+    type TypeName = 'Milestones' | 'Epics' | 'Issues';
+
+    /** Presses (or unpresses) the toggle of an item type. */
+    async function toggleType(page: Page, type: TypeName) {
       await page.getByRole('group', { name: 'Show' }).getByRole('button', { name: type }).click();
+    }
+
+    /** Unpresses every type but the given ones (they all start pressed). */
+    async function showOnly(page: Page, ...types: TypeName[]) {
+      for (const type of ['Milestones', 'Epics', 'Issues'] as const) {
+        if (!types.includes(type)) await toggleType(page, type);
+      }
     }
 
     /** Opens the Labels menu, toggles the given labels, and closes it. */
@@ -730,18 +739,39 @@ test.describe('Gantt (mocked API)', () => {
 
     const TOP_ROWS = ['[Milestone] Sprint 1', 'Main epic', 'Child epic'];
 
-    test('Milestones shows only the milestones', async ({ page }) => {
+    test('every type starts pressed; unpressing a type hides it', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+      const show = page.getByRole('group', { name: 'Show' });
+      for (const type of ['Milestones', 'Epics', 'Issues']) {
+        await expect(show.getByRole('button', { name: type })).toHaveAttribute('aria-pressed', 'true');
+      }
+      expect(await rowNames(page)).toEqual(TOP_ROWS);
+      await expect(page.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0);
+
+      await showOnly(page, 'Milestones');
+      await expect(show.getByRole('button', { name: 'Epics' })).toHaveAttribute('aria-pressed', 'false');
+      await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1']);
+
+      // Pressing them again shows everything.
+      await toggleType(page, 'Epics');
+      await toggleType(page, 'Issues');
+      await expect.poll(() => rowNames(page)).toEqual(TOP_ROWS);
+    });
+
+    test('with no type pressed, nothing is shown until Clear filters', async ({ page }) => {
       await mockApi(page);
       await page.goto('/');
       await expect(page.getByTitle('Main epic')).toBeVisible();
 
-      await toggleType(page, 'Milestones');
-      await expect(page.getByRole('button', { name: 'Milestones' })).toHaveAttribute('aria-pressed', 'true');
-      await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1']);
+      await showOnly(page);
+      await expect(page.getByText('No matching items')).toBeVisible();
+      await expect(page.locator('.task-list-row')).toHaveCount(0);
 
-      // Pressing it again shows everything.
-      await toggleType(page, 'Milestones');
+      await page.getByRole('button', { name: 'Clear filters' }).click();
       await expect.poll(() => rowNames(page)).toEqual(TOP_ROWS);
+      await expect(page.getByRole('button', { name: 'Issues' })).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('Epics with a label shows those epics, each with its whole content', async ({ page }) => {
@@ -749,7 +779,7 @@ test.describe('Gantt (mocked API)', () => {
       await page.goto('/');
       await expect(page.getByTitle('Main epic')).toBeVisible();
 
-      await toggleType(page, 'Epics');
+      await showOnly(page, 'Epics');
       await pickLabels(page, 'team-a');
       await expect(page.getByRole('button', { name: 'Labels: team-a' })).toHaveAttribute('data-active', 'true');
       await expect.poll(() => rowNames(page)).toEqual(['Main epic']);
@@ -764,7 +794,7 @@ test.describe('Gantt (mocked API)', () => {
       await page.goto('/');
       await expect(page.getByTitle('Main epic')).toBeVisible();
 
-      await toggleType(page, 'Epics');
+      await showOnly(page, 'Epics');
       await pickLabels(page, 'backend');
       await expect.poll(() => rowNames(page)).toEqual(['Child epic']);
     });
@@ -776,7 +806,7 @@ test.describe('Gantt (mocked API)', () => {
 
       // "Shared issue" sits under Sprint 1 and under Main epic, "Deep issue" under both copies
       // of Child epic: each is listed once.
-      await toggleType(page, 'Issues');
+      await showOnly(page, 'Issues');
       await expect.poll(() => rowNames(page)).toEqual(['Shared issue', 'Standalone issue', 'Deep issue']);
 
       await pickLabels(page, 'frontend');
@@ -811,7 +841,7 @@ test.describe('Gantt (mocked API)', () => {
 
       // Combined with a type.
       await page.getByRole('textbox', { name: 'Search' }).fill('i');
-      await toggleType(page, 'Milestones');
+      await showOnly(page, 'Milestones');
       await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1']);
 
       await page.getByRole('button', { name: 'Clear search' }).click();
@@ -823,8 +853,7 @@ test.describe('Gantt (mocked API)', () => {
       await page.goto('/');
       await expect(page.getByTitle('Main epic')).toBeVisible();
 
-      await toggleType(page, 'Epics');
-      await toggleType(page, 'Issues');
+      await showOnly(page, 'Epics', 'Issues');
       await expect
         .poll(() => rowNames(page))
         .toEqual(['Main epic', 'Child epic', 'Shared issue', 'Standalone issue', 'Deep issue']);
@@ -844,7 +873,7 @@ test.describe('Gantt (mocked API)', () => {
       await expandRow(page, 'Main epic');
       await expect(page.getByTitle('Standalone issue')).toBeVisible();
 
-      await toggleType(page, 'Epics');
+      await showOnly(page, 'Epics');
       await expect.poll(() => rowNames(page)).toEqual(['Main epic', 'Shared issue', 'Standalone issue', 'Child epic', 'Child epic']);
 
       await page.getByRole('button', { name: 'Clear', exact: true }).click();
@@ -859,14 +888,14 @@ test.describe('Gantt (mocked API)', () => {
       await expect(page.getByTitle('Main epic')).toBeVisible();
 
       // Sprint 1 holds no "bug" item.
-      await toggleType(page, 'Milestones');
+      await showOnly(page, 'Milestones');
       await pickLabels(page, 'bug');
       await expect(page.getByText('No matching items')).toBeVisible();
       await expect(page.locator('.gantt-chart')).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Clear filters' }).click();
       await expect.poll(() => rowNames(page)).toEqual(TOP_ROWS);
-      await expect(page.getByRole('button', { name: 'Milestones' })).toHaveAttribute('aria-pressed', 'false');
+      await expect(page.getByRole('button', { name: 'Milestones' })).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByRole('button', { name: 'Labels', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Clear', exact: true })).toHaveCount(0);
     });

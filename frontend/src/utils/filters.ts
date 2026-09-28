@@ -1,17 +1,23 @@
 import { GanttTask, GanttTaskType, Label } from '../types/gantt';
 
-/** What the filter bar asks for: the types of items to show (none = every type), the
- * labels they must carry (any of them) and a text their name must contain. */
+/** What the filter bar asks for: the types of items to show (all of them by default, none =
+ * nothing), the labels they must carry (any of them) and a text their name must contain. */
 export interface Filters {
   search: string;
   types: GanttTaskType[];
   labels: string[]; // label titles
 }
 
-export const EMPTY_FILTERS: Filters = { search: '', types: [], labels: [] };
+export const ALL_TYPES: GanttTaskType[] = ['milestone', 'epic', 'issue'];
+
+export const DEFAULT_FILTERS: Filters = { search: '', types: ALL_TYPES, labels: [] };
 
 export function isFiltering(filters: Filters): boolean {
-  return filters.search.trim() !== '' || filters.types.length > 0 || filters.labels.length > 0;
+  return (
+    filters.search.trim() !== '' ||
+    ALL_TYPES.some((type) => !filters.types.includes(type)) ||
+    filters.labels.length > 0
+  );
 }
 
 /** Lower case, without accents: "Élan" and "elan" match. */
@@ -52,7 +58,7 @@ export function applyFilters(tree: GanttTask[], filters: Filters): GanttTask[] {
   if (!isFiltering(filters)) return tree;
   const search = normalizeText(filters.search.trim());
   const matches = (node: GanttTask) =>
-    (filters.types.length === 0 || filters.types.includes(node.type)) &&
+    filters.types.includes(node.type) &&
     (filters.labels.length === 0 || hasLabel(node, filters.labels)) &&
     (!search || normalizeText(node.name).includes(search));
 

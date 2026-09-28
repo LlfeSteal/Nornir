@@ -9,7 +9,7 @@ import { AppConfig, errorMessage, fetchConfig, fetchGantt, fetchLabels } from '.
 import { GanttTask, Label } from './types/gantt';
 import { ColorSchemeContext, useAppearance } from './utils/appearance';
 import { withoutClosed } from './utils/flatten';
-import { EMPTY_FILTERS, Filters, applyFilters, labelOptions } from './utils/filters';
+import { DEFAULT_FILTERS, Filters, applyFilters, labelOptions } from './utils/filters';
 import { useStoredBoolean, useStoredValue } from './utils/preferences';
 import { DEFAULT_PRESET, PERIOD_PRESETS, PeriodPreset, periodLabel, periodRange, withinPeriod } from './utils/period';
 
@@ -31,7 +31,7 @@ export const App: React.FC = () => {
   const { appearance, scheme, setAppearance } = useAppearance();
   // Closed items are hidden unless the user asks for them (remembered).
   const [showClosed, setShowClosed] = useStoredBoolean('nornir.showClosed', false);
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   // Typing stays smooth on large trees: the chart follows the filters a bit later.
   const deferredFilters = useDeferredValue(filters);
 
@@ -140,7 +140,7 @@ export const App: React.FC = () => {
             title="No matching items"
             message="No item matches these filters."
             action={
-              <button type="button" className="button" onClick={() => setFilters(EMPTY_FILTERS)}>
+              <button type="button" className="button" onClick={() => setFilters(DEFAULT_FILTERS)}>
                 Clear filters
               </button>
             }

@@ -2,7 +2,7 @@ import React from 'react';
 import { FilterMenu } from './FilterMenu';
 import { ClearIcon, SearchIcon } from './Icons';
 import { GanttTaskType } from '../types/gantt';
-import { EMPTY_FILTERS, FilterOption, Filters, isFiltering } from '../utils/filters';
+import { DEFAULT_FILTERS, FilterOption, Filters, isFiltering } from '../utils/filters';
 
 const TYPES: { value: GanttTaskType; label: string }[] = [
   { value: 'milestone', label: 'Milestones' },
@@ -16,7 +16,7 @@ interface Props {
   labels: FilterOption[];
 }
 
-/** Picks the items to show: search field, item types (none pressed = every type) and labels. */
+/** Picks the items to show: search field, item types (all pressed by default, none = nothing) and labels. */
 export const FilterBar: React.FC<Props> = ({ filters, onChange, labels }) => {
   const toggleType = (type: GanttTaskType) =>
     onChange({
@@ -71,7 +71,7 @@ export const FilterBar: React.FC<Props> = ({ filters, onChange, labels }) => {
         emptyText="No labels in this group"
       />
       {isFiltering(filters) && (
-        <button type="button" className="button plain" onClick={() => onChange(EMPTY_FILTERS)}>
+        <button type="button" className="button plain" onClick={() => onChange(DEFAULT_FILTERS)}>
           Clear
         </button>
       )}
