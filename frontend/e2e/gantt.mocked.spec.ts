@@ -645,4 +645,124 @@ test.describe('Gantt (mocked API)', () => {
       await expect(page.getByText('Everything is closed')).toHaveCount(0);
     });
   });
+
+  test.describe('full height', () => {
+    // Ten plain epics, then an epic whose 30 issues can't fit on screen once expanded.
+    const tallTree = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        id: `E${i}`, name: `Epic ${i}`, type: 'epic', start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 0,
+      })),
+      {
+        id: 'BIG', name: 'Big epic', type: 'epic', start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 0,
+        children: Array.from({ length: 30 }, (_, i) => ({
+          id: `I${i}`, name: `Issue ${i}`, type: 'issue', start: '2026-10-05', end: '2026-10-15', progress: 0, linearProgress: 0,
+        })),
+      },
+    ];
+
+    /** Vertical gap between a list row and the label of its bar (0 when they line up). */
+    async function rowBarGap(page: Page, name: string) {
+      const row = (await page.getByTitle(name).boundingBox())!;
+      const label = (await page.locator('svg text', { hasText: new RegExp(`^${name}$`) }).boundingBox())!;
+      return Math.abs(row.y + row.height / 2 - (label.y + label.height / 2));
+    }
+
+    async function wheelOverChart(page: Page, deltaY: number) {
+      const box = (await page.locator('.gantt-chart').boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, deltaY);
+    }
+
+    /** Distance between the bottom of the chart card and the bottom of the window. */
+    async function gapBelowCard(page: Page) {
+      const card = (await page.locator('.gantt-chart').boundingBox())!;
+      return page.viewportSize()!.height - (card.y + card.height);
+    }
+
+    test('the chart grows with its rows, up to the window height', async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-10-10T12:00:00'));
+      await mockApi(page, { body: tallTree });
+      await page.goto('/');
+      await expect(page.getByTitle('Big epic')).toBeVisible();
+
+      // Few rows: the card hugs them.
+      const rows = await page.locator('.task-list-row').count();
+      const card = (await page.locator('.gantt-chart').boundingBox())!;
+      const header = (await page.locator('.task-list-header').boundingBox())!;
+      expect(card.height).toBeLessThan(header.height + (rows + 1) * (await rowHeight(page)) + 20);
+      expect(await gapBelowCard(page)).toBeGreaterThan(100);
+
+      // Too many rows: the card stops at the window bottom and the page doesn't scroll.
+      await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+      await expect(page.getByTitle('Issue 29')).toHaveCount(1);
+      await expect.poll(async () => Math.abs((await gapBelowCard(page)) - 16)).toBeLessThanOrEqual(2);
+      expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight)).toBe(true);
+
+      // It follows the window size.
+      const viewport = page.viewportSize()!;
+      await page.setViewportSize({ width: viewport.width, height: viewport.height - 100 });
+      await expect.poll(async () => Math.abs((await gapBelowCard(page)) - 16)).toBeLessThanOrEqual(2);
+    });
+
+    test('rows that do not fit scroll inside the chart, under a fixed header', async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-10-10T12:00:00'));
+      await mockApi(page, { body: tallTree });
+      await page.goto('/');
+      await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+      await expect(page.getByTitle('Issue 29')).toHaveCount(1);
+      await expect(page.getByTitle('Issue 29')).not.toBeInViewport();
+
+      await wheelOverChart(page, 2000);
+      await expect(page.getByTitle('Issue 29')).toBeInViewport();
+      await expect(page.getByTitle('Epic 0')).not.toBeInViewport();
+      // The list and the bars scroll together; the header and the page stay put.
+      await expect.poll(() => rowBarGap(page, 'Issue 29')).toBeLessThanOrEqual(2);
+      await expect(page.locator('.gantt-chart ._35nLX')).toBeInViewport();
+      await expect(page.getByRole('banner')).toBeInViewport();
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    });
+
+    test('collapsing rows after scrolling down brings the first rows back', async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-10-10T12:00:00'));
+      await mockApi(page, { body: tallTree });
+      await page.goto('/');
+      await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();
+      await expect(page.getByTitle('Issue 29')).toHaveCount(1);
+
+      // Scroll by exactly 10 rows: "Big epic" becomes the first visible row.
+      await wheelOverChart(page, 10 * (await rowHeight(page)));
+      await expect(page.getByTitle('Epic 0')).not.toBeInViewport();
+      await expect(page.getByTitle('Big epic')).toBeInViewport();
+      await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Collapse' }).click();
+
+      await expect(page.getByTitle('Epic 0')).toBeInViewport();
+      await expect.poll(() => rowBarGap(page, 'Epic 0')).toBeLessThanOrEqual(2);
+      // The card shrinks back to its rows.
+      await expect.poll(() => gapBelowCard(page)).toBeGreaterThan(100);
+      await expect.poll(() => rowBarGap(page, 'Big epic')).toBeLessThanOrEqual(2);
+    });
+
+    test('the wheel does not move rows that already fit', async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
+      await mockApi(page);
+      await page.goto('/');
+      const label = page.locator('svg text', { hasText: 'Main epic' });
+      const tooltip = page.locator('.gantt-tooltip');
+
+      const hover = async () => {
+        const box = (await label.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await expect(tooltip).toBeVisible();
+        return (await tooltip.boundingBox())!.y;
+      };
+      const before = await hover();
+      await page.mouse.move(5, 5);
+      await expect(tooltip).toHaveCount(0);
+
+      await wheelOverChart(page, 500);
+      // The tooltip is placed from the library's scroll offset: it stays next to the bar.
+      expect(Math.abs((await hover()) - before)).toBeLessThanOrEqual(2);
+      expect(await rowBarGap(page, 'Main epic')).toBeLessThanOrEqual(2);
+    });
+  });
 });

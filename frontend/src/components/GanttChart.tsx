@@ -23,6 +23,7 @@ const ROW_HEIGHT = 40; // px
 
 const LIST_WIDTH = 260; // px, the single Name column
 const HEADER_HEIGHT = 52;
+const MIN_CARD_HEIGHT = 320; // px: below that, the page scrolls instead
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif";
 
 const COLUMN_WIDTHS: Partial<Record<ViewMode, number>> = {
@@ -304,6 +305,29 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
     return { tasks, urls, rowInfo, shownRows: visibleRows(flatItems, expanded) };
   }, [data, expanded, scheme]);
 
+  // The card grows with its rows, up to the bottom of the page content (which stretches to
+  // the window bottom, see theme.css); beyond that, the rows scroll inside it. The space is
+  // measured from `.content`, not from the card, so the card's own size doesn't feed back.
+  const [maxBodyHeight, setMaxBodyHeight] = useState(0);
+  useEffect(() => {
+    const element = chartRef.current;
+    const content = element?.parentElement;
+    if (!element || !content) return;
+    const measure = () => {
+      const bottom = content.getBoundingClientRect().bottom - parseFloat(getComputedStyle(content).paddingBottom);
+      const card = Math.max(MIN_CARD_HEIGHT, bottom - element.getBoundingClientRect().top);
+      const scrollbar = element.querySelector<HTMLElement>('._2k9Ys')?.offsetHeight ?? 12;
+      setMaxBodyHeight(Math.floor(card - HEADER_HEIGHT - scrollbar));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [hasTasks]);
+  // Never taller than the rows: with more room than rows, the library scrolls to a negative
+  // offset on the wheel or ↑/↓ (which shifts its tooltip). 0 (auto) until measured.
+  const ganttHeight = maxBodyHeight > 0 ? Math.min(maxBodyHeight, shownRows.length * ROW_HEIGHT) : 0;
+
   // Draws the today line and the group bands whenever the library re-renders its SVG.
   useEffect(() => {
     const element = chartRef.current;
@@ -376,6 +400,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
           listCellWidth={`${LIST_WIDTH}px`}
           rowHeight={ROW_HEIGHT}
           headerHeight={HEADER_HEIGHT}
+          ganttHeight={ganttHeight}
           barCornerRadius={6}
           barFill={60}
           fontFamily={FONT}

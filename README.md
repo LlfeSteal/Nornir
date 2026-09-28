@@ -46,6 +46,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - Expanded children appear right below their parent, indented with tree lines, on a band in the parent's color (purple for a milestone, blue for an epic), with lighter bars than the top-level rows.
 - Everything starts collapsed; the chevrons expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
 - The toolbar holds the time scale (Day / Week / Month), **Today** (scrolls back to today) and **Refresh**, with the time of the last update.
+- The chart grows with its rows up to the window height; beyond that, the rows scroll inside it while the calendar header stays in view.
 - The chart opens centered on today, marked by a red line and a "Today" label; switching the time scale centers it again.
 - **Appearance** menu in the toolbar: Automatic (follows your system), Light or Dark — remembered in the browser.
 - The list shows the item names; hover a bar to see its dates and progress.
