@@ -1,5 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import type { ColorScheme } from './colors';
+import { useCallback, useEffect, useState } from 'react';
 
 // Appearance setting, like Apple's: Automatic (follows the system), Light or Dark. The choice
 // is remembered in localStorage and applied as data-theme on <html>, which selects the
@@ -9,6 +8,7 @@ import type { ColorScheme } from './colors';
 // avoid a flash of the wrong theme): keep both in sync.
 
 export type Appearance = 'system' | 'light' | 'dark';
+export type ColorScheme = 'light' | 'dark';
 
 export const APPEARANCE_KEY = 'nornir.appearance';
 const DARK_QUERY = '(prefers-color-scheme: dark)';
@@ -66,11 +66,4 @@ export function useAppearance() {
   }, []);
 
   return { appearance, scheme, setAppearance };
-}
-
-/** Resolved color scheme, for components that need actual colors (the SVG bars). */
-export const ColorSchemeContext = createContext<ColorScheme>('light');
-
-export function useColorScheme(): ColorScheme {
-  return useContext(ColorSchemeContext);
 }

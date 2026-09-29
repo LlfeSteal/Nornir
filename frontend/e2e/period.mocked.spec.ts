@@ -29,7 +29,8 @@ test.describe('period', () => {
     expect(await rowNames(page)).toEqual(['[Milestone] Q4 sprint', 'Current epic', 'Long epic']);
 
     // The timeline starts with the period, not with the earliest item (June).
-    await expect(page.locator('._9w8d5').first()).toHaveText('January');
+    await page.locator('.gantt-scroll').evaluate((scroller) => (scroller.scrollLeft = 0));
+    await expect(page.locator('.calendar-cell').first()).toHaveText('January');
 
     // The long epic's only issue is in 2027: nothing to expand this year.
     await expect(page.getByTitle('Long epic').getByRole('button', { name: 'Expand' })).toHaveCount(0);
@@ -41,11 +42,10 @@ test.describe('period', () => {
 
   test('bars are cut at the end of the period, the tooltip keeps the real dates', async ({ page }) => {
     await open(page);
-    const label = page.locator('svg text', { hasText: 'Long epic' });
+    const label = page.locator('.bar-label', { hasText: 'Long epic' });
     await expect(label).toBeVisible();
-    const columnWidth = Number(await page.locator('g.today rect').getAttribute('width'));
-    const barWidth = () =>
-      label.evaluate((text) => Number(text.parentElement!.querySelector('rect')!.getAttribute('width')));
+    const columnWidth = (await page.locator('.calendar-cell').first().boundingBox())!.width;
+    const barWidth = async () => (await page.locator('.bar', { has: label }).boundingBox())!.width;
     // June → end of December: 7 month columns.
     expect(await barWidth()).toBeCloseTo(7 * columnWidth, 0);
 
@@ -66,10 +66,9 @@ test.describe('period', () => {
     await expect(page.getByTitle('Long epic')).toHaveCount(0);
     // Kept for its 2025 issue.
     await expect(page.getByTitle('Current epic')).toBeVisible();
-    // Today isn't in 2025: the chart shows the period from its start (the library's
-    // horizontal scrollbar stays at the left).
-    await expect(page.locator('._9w8d5').first()).toHaveText('January');
-    await expect.poll(() => page.locator('._2k9Ys').evaluate((bar) => bar.scrollLeft)).toBe(0);
+    // Today isn't in 2025: the chart shows the period from its start.
+    await expect.poll(() => page.locator('.gantt-scroll').evaluate((scroller) => scroller.scrollLeft)).toBe(0);
+    await expect(page.locator('.calendar-cell').first()).toHaveText('January');
 
     await page.getByRole('button', { name: 'Today' }).click();
     await expect(page.getByRole('button', { name: 'Period: 2026' })).toBeVisible();
@@ -86,7 +85,7 @@ test.describe('period', () => {
     await expect(page.getByRole('button', { name: 'Period: Q4 2026' })).toBeVisible();
     await expect(page.getByRole('radio', { name: 'Week' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTitle('Long epic')).toBeVisible();
-    await expect(page.locator('line.today-line')).toHaveCount(1);
+    await expect(page.locator('.today-line')).toHaveCount(1);
 
     await page.getByRole('button', { name: 'Next period' }).click();
     await expect(page.getByRole('button', { name: 'Period: Q1 2027' })).toBeVisible();

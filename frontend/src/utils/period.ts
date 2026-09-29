@@ -1,6 +1,5 @@
-import { ViewMode } from 'gantt-task-react';
 import { GanttTask } from '../types/gantt';
-import { parseDay } from './today';
+import { parseDay, ViewMode } from './timeline';
 
 // The period shown in the chart: a preset window around today, moved back or forward by
 // whole steps with the ‹ › arrows. Rows outside it are hidden and bars are cut at its edges.

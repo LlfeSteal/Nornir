@@ -1,14 +1,24 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Gantt, Task, ViewMode } from 'gantt-task-react';
-import 'gantt-task-react/dist/index.css';
+import React, { forwardRef, memo, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GanttTask } from '../types/gantt';
-import { FlatGanttTask, flattenGanttTree, visibleRows } from '../utils/flatten';
-import { RowInfoContext, TaskListHeader, TaskListTable, TooltipContent } from './TaskList';
-import { columnFraction, columnsBetween, preStepsTo } from '../utils/today';
+import { Row, visibleRows } from '../utils/flatten';
+import { TaskListHeader, TaskListRow, TooltipContent, rowSchedule } from './TaskList';
+import {
+  COLUMN_WIDTHS,
+  Timeline,
+  ViewMode,
+  addColumns,
+  columnGroup,
+  columnLabel,
+  dataSpan,
+  makeTimeline,
+  startOfDay,
+} from '../utils/timeline';
 import { clipBar, DateRange } from '../utils/period';
-import { groupBand, muted, PALETTES } from '../utils/colors';
-import { useColorScheme } from '../utils/appearance';
-import { missingDatesMessage, scheduleStatus } from '../utils/schedule';
+import { missingDatesMessage } from '../utils/schedule';
+
+// The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
+// calendar columns) on screen are rendered: one native scroll container moves everything,
+// with the calendar header sticky at the top and the list of names sticky on the left.
 
 interface Props {
   data: GanttTask[];
@@ -22,447 +32,318 @@ export interface GanttChartHandle {
   scrollToToday: () => void;
 }
 
-const ROW_HEIGHT = 40; // px
-
+export const ROW_HEIGHT = 40; // px
 const LIST_WIDTH = 260; // px, the single Name column
 const HEADER_HEIGHT = 52;
 const MIN_CARD_HEIGHT = 320; // px: below that, the page scrolls instead
-const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif";
+const OVERSCAN_ROWS = 8; // rendered above and below the visible rows
+const OVERSCAN_COLUMNS = 2;
 
-const COLUMN_WIDTHS: Partial<Record<ViewMode, number>> = {
-  [ViewMode.Day]: 44,
-  [ViewMode.Week]: 110,
-  [ViewMode.Month]: 180,
-};
-
-// gantt-task-react can only fill today's whole column (a whole week in Week view), so the
-// line is drawn by hand: we find the column it highlights (`g.today rect`, made transparent
-// through todayColor) and put a line at today's position inside that column. The library
-// re-renders its SVG on its own (scrolling, expanding rows...), hence the MutationObserver.
-function drawTodayLine(root: HTMLElement, viewMode: ViewMode) {
-  const column = root.querySelector<SVGRectElement>('g.today rect');
-  const svg = column?.ownerSVGElement;
-  let line = root.querySelector<SVGLineElement>('line.today-line');
-  if (!column || !svg || !column.getAttribute('width')) {
-    line?.remove();
-    return;
-  }
-  if (!line || line.ownerSVGElement !== svg) {
-    line?.remove();
-    line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('class', 'today-line');
-    svg.appendChild(line); // last child: drawn above the bars
-  }
-  const x = String(
-    Number(column.getAttribute('x')) + columnFraction(new Date(), viewMode) * Number(column.getAttribute('width')),
-  );
-  const attributes: Record<string, string> = { x1: x, x2: x, y1: '0', y2: column.getAttribute('height') ?? '0' };
-  setAttributes(line, attributes);
-  drawTodayPill(root, Number(x));
+interface Viewport {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
 }
 
-// Only writes changes, so our own writes don't keep triggering the MutationObserver.
-function setAttributes(element: Element, attributes: Record<string, string>) {
-  for (const [name, value] of Object.entries(attributes)) {
-    if (element.getAttribute(name) !== value) element.setAttribute(name, value);
-  }
-}
-
-// A "Today" pill at the bottom of the calendar header, above the line. The header is a
-// separate SVG (the one holding the calendar background) that scrolls with the chart.
-function drawTodayPill(root: HTMLElement, x: number) {
-  const header = root.querySelector<SVGRectElement>('._35nLX')?.ownerSVGElement;
-  if (!header) return;
-  let pill = header.querySelector<SVGGElement>('g.today-pill');
-  if (!pill) {
-    pill = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    pill.setAttribute('class', 'today-pill');
-    pill.append(
-      document.createElementNS('http://www.w3.org/2000/svg', 'rect'),
-      document.createElementNS('http://www.w3.org/2000/svg', 'text'),
-    );
-    pill.lastElementChild!.textContent = 'Today';
-    header.appendChild(pill);
-  }
-  const width = 40;
-  const height = 16;
-  const y = HEADER_HEIGHT - height - 2;
-  setAttributes(pill.firstElementChild!, {
-    x: String(x - width / 2),
-    y: String(y),
-    width: String(width),
-    height: String(height),
-    rx: String(height / 2),
-  });
-  setAttributes(pill.lastElementChild!, { x: String(x), y: String(y + height / 2) });
-}
-
-// Scrolls the chart so that the today line is in the middle of the visible area. The
-// library's `viewDate` prop can't do it reliably: it resolves the date against stale
-// columns when the date range changes in the same render (first render, collapsed rows).
-// So we drive the library's own horizontal scrollbar, which it listens to via onScroll.
-function timelineParts(root: HTMLElement) {
-  // The library's scrollbar is the only horizontally scrollable element; the chart itself
-  // sits in an overflow-hidden container the library scrolls to match it.
-  const scrollbar = [...root.querySelectorAll<HTMLElement>('div')].find((div) =>
-    ['auto', 'scroll'].includes(getComputedStyle(div).overflowX),
-  );
-  const container = root.querySelector<SVGGElement>('g.rows')?.ownerSVGElement?.parentElement?.parentElement;
-  return scrollbar && container ? { scrollbar, container } : null;
-}
-
-function scrollParts(root: HTMLElement) {
-  const line = root.querySelector<SVGLineElement>('line.today-line');
-  const parts = timelineParts(root);
-  return line && parts ? { line, ...parts } : null;
-}
-
-/** Scrolls so that the today line sits `offset` px from the left of the visible area
- * (the middle when no offset is given). */
-function keepTodayLineAt(root: HTMLElement, offset?: number) {
-  const parts = scrollParts(root);
-  if (!parts) return;
-  const { line, container } = parts;
-  const want = offset ?? container.clientWidth / 2;
-  scrollTimelineTo(root, Math.max(0, Math.round(Number(line.getAttribute('x1')) - want)));
-}
-
-/** Scrolls the timeline to `target` px from its start. */
-function scrollTimelineTo(root: HTMLElement, target: number) {
-  const parts = timelineParts(root);
-  if (!parts) return;
-  const { scrollbar, container } = parts;
-  if (Math.abs(scrollbar.scrollLeft - target) > 1) {
-    scrollbar.scrollLeft = target;
-  } else if (Math.abs(container.scrollLeft - scrollbar.scrollLeft) > 1) {
-    // The library ignores every other scroll event: send it again until the chart follows.
-    scrollbar.dispatchEvent(new Event('scroll', { bubbles: true }));
-  }
-}
-
-// Tints the timeline rows that sit inside an expanded group, like the list rows. The
-// library draws one `g.rows rect` per task, hidden ones included, at y = index × rowHeight:
-// the visible row at index i lines up with the rect at that y.
-function paintGroupBands(root: HTMLElement, rows: FlatGanttTask[]) {
-  root.querySelectorAll<SVGRectElement>('g.rows rect').forEach((rect) => {
-    const row = rows[Math.round(Number(rect.getAttribute('y')) / ROW_HEIGHT)];
-    const fill = row?.parentType ? groupBand(row.parentType) : '';
-    if (rect.style.fill !== fill) rect.style.fill = fill;
-  });
-}
-
-// Epics and milestones get a third layer between their transparent track and their solid
-// progress: the linear progress, i.e. where they should be today if the work advanced evenly
-// (computed by the backend). The library can't draw it, so it is added next to the track
-// (`._2RbVy`, first rect of a project bar `._1KJ6x`), before the progress rect so the solid
-// progress stays on top. Bars sit in their row: row index = floor(y / ROW_HEIGHT).
-function paintLinearProgress(root: HTMLElement, rows: FlatGanttTask[], barLinear: Map<string, number>) {
-  root.querySelectorAll<SVGRectElement>('._1KJ6x > rect._2RbVy').forEach((track) => {
-    const row = rows[Math.floor(Number(track.getAttribute('y')) / ROW_HEIGHT)];
-    let linear = track.parentElement!.querySelector<SVGRectElement>('rect.linear-progress');
-    const progress = row ? barLinear.get(row.id) ?? row.linearProgress : 0;
-    if (!row || row.closed || missingDatesMessage(row) || !(progress > 0)) {
-      linear?.remove();
-      return;
-    }
-    if (!linear) {
-      linear = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      linear.setAttribute('class', 'linear-progress');
-      track.after(linear);
-    }
-    const width = Number(track.getAttribute('width')) * Math.min(100, progress) / 100;
-    setAttributes(linear, {
-      x: track.getAttribute('x') ?? '0',
-      y: track.getAttribute('y') ?? '0',
-      height: track.getAttribute('height') ?? '0',
-      rx: track.getAttribute('rx') ?? '0',
-      ry: track.getAttribute('ry') ?? '0',
-      width: String(width),
-      fill: track.getAttribute('fill') ?? 'currentColor',
-    });
-  });
-}
-
-// Closed rows are drawn with a gray hatch, an SVG pattern defined once in the page (see
-// ClosedHatchPattern); bar colors are props, so the pattern is referenced by URL.
-const CLOSED_HATCH_ID = 'nornir-closed-hatch';
-const CLOSED_FILL = `url(#${CLOSED_HATCH_ID})`;
-
-function ClosedHatchPattern() {
-  return (
-    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
-      <defs>
-        <pattern id={CLOSED_HATCH_ID} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <rect width="6" height="6" style={{ fill: 'var(--closed-bg)' }} />
-          <line x1="0" y1="0" x2="0" y2="6" style={{ stroke: 'var(--closed-stroke)', strokeWidth: 2.5 }} />
-        </pattern>
-      </defs>
-    </svg>
-  );
-}
-
-// Flags the bars (on the library's task group, which also holds the label) for the CSS:
-// data-closed grays the label and keeps the hatch readable; data-undated outlines the bars
-// whose dates are missing in GitLab.
-function markBars(root: HTMLElement, rows: FlatGanttTask[]) {
-  root.querySelectorAll<SVGGElement>('._KxSXS, ._1KJ6x').forEach((bar) => {
-    const rect = bar.querySelector('rect');
-    const row = rect ? rows[Math.floor(Number(rect.getAttribute('y')) / ROW_HEIGHT)] : undefined;
-    const item = bar.parentElement!;
-    setFlag(item, 'data-closed', !!row?.closed);
-    setFlag(item, 'data-undated', !!row && !row.closed && !!missingDatesMessage(row));
-  });
-}
-
-function setFlag(element: Element, name: string, on: boolean) {
-  if (on) {
-    if (element.getAttribute(name) !== 'true') element.setAttribute(name, 'true');
-  } else if (element.hasAttribute(name)) {
-    element.removeAttribute(name);
-  }
-}
-
-const CENTERING_MS = 500;
-
-/** Repeats a scroll step (e.g. keeping the today line in place, see keepTodayLineAt) for a
- * short while, as the library settles over a few renders. Returns a function that stops it. */
-function startScrollLoop(scrollStep: () => void, onEnd: () => void): () => void {
-  let frame = requestAnimationFrame(function step() {
-    scrollStep();
-    frame = requestAnimationFrame(step);
-  });
-  const stop = setTimeout(() => {
-    cancelAnimationFrame(frame);
-    onEnd();
-  }, CENTERING_MS);
-  return () => {
-    cancelAnimationFrame(frame);
-    clearTimeout(stop);
-    onEnd();
-  };
+interface Hover {
+  row: Row;
+  x: number; // mouse position, viewport coordinates
+  top: number; // bar edges, viewport coordinates
+  bottom: number;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode, range }, ref) {
-  const scheme = useColorScheme();
   // Groups are collapsed unless expanded by the user: everything starts collapsed,
   // including groups that appear after a refresh.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const chartRef = useRef<HTMLDivElement>(null);
-  const columnWidth = COLUMN_WIDTHS[viewMode] ?? 120;
-  // The chart element only exists when there is something to show.
-  const hasTasks = data.length > 0;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState<Viewport>({ top: 0, left: 0, width: window.innerWidth, height: window.innerHeight });
+  const [hover, setHover] = useState<Hover | null>(null);
 
-  // One scroll loop at a time: centering on today, going to the period start, or keeping
-  // the view in place.
-  const scrollLoop = useRef<{ stop: () => void } | null>(null);
-  const runScrollLoop = useCallback((step: (element: HTMLElement) => void) => {
-    scrollLoop.current?.stop();
-    const element = chartRef.current;
+  const rows = useMemo(() => visibleRows(data, expanded), [data, expanded]);
+  const hasRows = rows.length > 0;
+
+  // The timeline spans the period, or else every item (collapsed ones included, so that
+  // expanding a row never moves it) with room to center today.
+  const todayKey = new Date().toDateString();
+  const span = useMemo(() => dataSpan(data), [data]);
+  const timeline = useMemo(() => {
+    if (range) return makeTimeline(range.from, range.to, viewMode);
+    const today = startOfDay(new Date());
+    const tomorrow = addColumns(today, 1, ViewMode.Day);
+    const padding = Math.ceil(window.innerWidth / COLUMN_WIDTHS[viewMode] / 2) + 1;
+    const from = span && span.from < today ? span.from : today;
+    const to = span && span.to > tomorrow ? span.to : tomorrow;
+    return makeTimeline(addColumns(from, -padding, viewMode), addColumns(to, padding, viewMode), viewMode);
+  }, [span, range, viewMode, todayKey]);
+  const timelineRef = useRef(timeline);
+  timelineRef.current = timeline;
+
+  const centerOnToday = useCallback(() => {
+    const element = scrollRef.current;
     if (!element) return;
-    const loop = {
-      stop: startScrollLoop(
-        () => step(element),
-        () => {
-          if (scrollLoop.current === loop) scrollLoop.current = null;
-        },
-      ),
-    };
-    scrollLoop.current = loop;
+    const x = timelineRef.current.x(new Date());
+    element.scrollLeft = Math.max(0, Math.round(x - (element.clientWidth - LIST_WIDTH) / 2));
   }, []);
-  const keepTodayLine = useCallback(
-    (offset?: number) => runScrollLoop((element) => keepTodayLineAt(element, offset)),
-    [runScrollLoop],
-  );
-  useEffect(() => () => scrollLoop.current?.stop(), []);
+  useImperativeHandle(ref, () => ({ scrollToToday: centerOnToday }), [centerOnToday]);
 
-  // Centers on today when the chart appears and when the view mode or the period changes;
-  // a period without today (in the past or the future) is shown from its start.
+  // Centers on today when the chart appears and when the view mode or the period changes; a
+  // period without today (in the past or the future) is shown from its start. When only the
+  // start of the timeline moves (closed items shown, filters, refresh), the dates on screen
+  // stay where they are.
   const periodKey = range ? range.from.getTime() : 0;
-  const rangeRef = useRef(range);
-  rangeRef.current = range;
-  useEffect(() => {
-    const period = rangeRef.current;
-    const now = new Date();
-    if (!period || (now >= period.from && now < period.to)) keepTodayLine();
-    else runScrollLoop((element) => scrollTimelineTo(element, 0));
-  }, [viewMode, hasTasks, periodKey, keepTodayLine, runScrollLoop]);
+  const shown = useRef<{ viewMode: ViewMode; periodKey: number; from: Date } | null>(null);
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    const previous = shown.current;
+    shown.current = element ? { viewMode, periodKey, from: timeline.from } : null;
+    if (!element) return;
+    if (!previous || previous.viewMode !== viewMode || previous.periodKey !== periodKey) {
+      const now = new Date();
+      if (now >= timeline.from && now < timeline.to && (!range || (now >= range.from && now < range.to))) centerOnToday();
+      else element.scrollLeft = 0;
+    } else if (previous.from.getTime() !== timeline.from.getTime()) {
+      element.scrollLeft += timeline.x(previous.from);
+    }
+  }, [timeline, viewMode, periodKey, hasRows, range, centerOnToday]);
 
-  const scrollToToday = useCallback(() => keepTodayLine(), [keepTodayLine]);
-  useImperativeHandle(ref, () => ({ scrollToToday }), [scrollToToday]);
-
-  // Where the today line was last drawn, to notice when the date range changes.
-  const lastLine = useRef<{ x: number; viewMode: ViewMode; periodKey: number } | null>(null);
-
-  const { tasks, urls, rowInfo, barLinear, shownRows } = useMemo(() => {
-    const flatItems = flattenGanttTree(data);
-    const urls = new Map<string, string>();
-    const rowInfo = new Map(flatItems.map((item) => [item.id, item]));
-    // Linear progress as a fraction of the (possibly cut) bar, for paintLinearProgress.
-    const barLinear = new Map<string, number>();
-    const tasks: Task[] = flatItems.map((item) => {
-      if (item.webUrl) urls.set(item.id, item.webUrl);
-      // Cut at the period's edges; the tooltip shows the real dates (from RowInfoContext).
-      const bar = clipBar(item, range);
-      barLinear.set(item.id, bar.linearProgress);
-      // Children are drawn toned down compared to the top-level bars they belong to.
-      const palette = PALETTES[scheme];
-      const shade = (color: string) => (item.depth > 0 ? muted(color, scheme) : color);
-      // Any item with children becomes a collapsible "project".
-      const isGroup = item.type === 'milestone' || item.hasChildren;
-      // Epics and milestones are colored by schedule status (green / orange / red), other
-      // rows by type. Rows without dates in GitLab are gray: their schedule means nothing.
-      const color = shade(
-        missingDatesMessage(item)
-          ? palette.undated
-          : isGroup
-          ? palette.status[scheduleStatus(item.progress, item.linearProgress)]
-          : palette.types[item.type],
-      );
-      return {
-        start: bar.start,
-        end: bar.end,
-        name: item.name,
-        id: item.id,
-        type: isGroup ? 'project' : 'task',
-        // A closed row is drawn as one full hatched bar; its real progress stays in the
-        // tooltip (read from RowInfoContext).
-        progress: item.closed ? 100 : bar.progress,
-        project: item.parent,
-        hideChildren: isGroup ? !expanded.has(item.id) : undefined,
-        styles: item.closed
-          ? { backgroundColor: CLOSED_FILL, backgroundSelectedColor: CLOSED_FILL, progressColor: CLOSED_FILL, progressSelectedColor: CLOSED_FILL }
-          : isGroup
-          ? // Groups: a tinted track (see theme.css) with the solid progress on top.
-            { backgroundColor: color, backgroundSelectedColor: color, progressColor: color, progressSelectedColor: color }
-          : {
-              backgroundColor: color,
-              backgroundSelectedColor: shade(palette.selected),
-              progressColor: '#00000033',
-              progressSelectedColor: '#00000055',
-            },
-      };
-    });
-    return { tasks, urls, rowInfo, barLinear, shownRows: visibleRows(flatItems, expanded) };
-  }, [data, expanded, scheme, range]);
-
-  // The card grows with its rows, up to the bottom of the page content (which stretches to
-  // the window bottom, see theme.css); beyond that, the rows scroll inside it. The space is
-  // measured from `.content`, not from the card, so the card's own size doesn't feed back.
-  const [maxBodyHeight, setMaxBodyHeight] = useState(0);
-  useEffect(() => {
-    const element = chartRef.current;
-    const content = element?.parentElement;
-    if (!element || !content) return;
-    const measure = () => {
-      const bottom = content.getBoundingClientRect().bottom - parseFloat(getComputedStyle(content).paddingBottom);
-      const card = Math.max(MIN_CARD_HEIGHT, bottom - element.getBoundingClientRect().top);
-      const scrollbar = element.querySelector<HTMLElement>('._2k9Ys')?.offsetHeight ?? 12;
-      setMaxBodyHeight(Math.floor(card - HEADER_HEIGHT - scrollbar));
-    };
+  // What is on screen, updated once per frame while scrolling.
+  const frame = useRef(0);
+  const measure = useCallback(() => {
+    frame.current = 0;
+    const element = scrollRef.current;
+    if (!element) return;
+    const next = { top: element.scrollTop, left: element.scrollLeft, width: element.clientWidth, height: element.clientHeight };
+    setViewport((current) =>
+      current.top === next.top && current.left === next.left && current.width === next.width && current.height === next.height
+        ? current
+        : next,
+    );
+  }, []);
+  const onScroll = useCallback(() => {
+    setHover(null);
+    if (!frame.current) frame.current = requestAnimationFrame(measure);
+  }, [measure]);
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
     measure();
     const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame.current);
+      frame.current = 0;
+    };
+  }, [hasRows, measure]);
+
+  // The card grows with its rows, down to the bottom of the page content (which stretches
+  // to the window bottom, see theme.css); beyond that, the rows scroll inside it. The room
+  // is measured on `.content`, not on the card, so the card's own size doesn't feed back.
+  // Measured before the first paint, and never unbounded: an unbounded scroll container
+  // would be as tall as every row, and every row would be rendered.
+  const [maxHeight, setMaxHeight] = useState(() => window.innerHeight);
+  useLayoutEffect(() => {
+    const card = chartRef.current;
+    const content = card?.parentElement;
+    if (!card || !content) return;
+    const update = () => {
+      const bottom = content.getBoundingClientRect().bottom - parseFloat(getComputedStyle(content).paddingBottom);
+      setMaxHeight(Math.floor(Math.max(MIN_CARD_HEIGHT, bottom - card.getBoundingClientRect().top)));
+    };
+    update();
+    const observer = new ResizeObserver(update);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [hasTasks]);
-  // Never taller than the rows: with more room than rows, the library scrolls to a negative
-  // offset on the wheel or ↑/↓ (which shifts its tooltip). 0 (auto) until measured.
-  const ganttHeight = maxBodyHeight > 0 ? Math.min(maxBodyHeight, shownRows.length * ROW_HEIGHT) : 0;
+  }, [hasRows]);
 
-  // Draws the today line and the group bands whenever the library re-renders its SVG.
-  useEffect(() => {
-    const element = chartRef.current;
-    if (!element) return;
-    const draw = () => {
-      const before = scrollParts(element);
-      const previousX = before ? Number(before.line.getAttribute('x1')) : undefined;
-      drawTodayLine(element, viewMode);
-      const after = scrollParts(element);
-      if (after) {
-        const x = Number(after.line.getAttribute('x1'));
-        // The library keeps its scroll in pixels: when its date range changes (rows shown or
-        // hidden, closed items toggled, refresh), the dates under the user's eye would shift.
-        // Keep the today line where it was on screen instead.
-        if (
-          previousX !== undefined &&
-          x !== previousX &&
-          lastLine.current?.viewMode === viewMode &&
-          lastLine.current.periodKey === periodKey &&
-          !scrollLoop.current
-        ) {
-          keepTodayLine(previousX - after.container.scrollLeft);
-        }
-        lastLine.current = { x, viewMode, periodKey };
-      }
-      paintGroupBands(element, shownRows);
-      paintLinearProgress(element, shownRows, barLinear);
-      markBars(element, shownRows);
-    };
-    draw();
-    const observer = new MutationObserver(draw);
-    observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['x', 'y', 'width', 'height', 'fill'] });
-    return () => observer.disconnect();
-  }, [viewMode, hasTasks, shownRows, barLinear, periodKey, keepTodayLine]);
-
-  // The date range starts preStepsCount columns before the earliest visible item. With a
-  // period, make it start with the period, even when the items start later. Otherwise make
-  // it start early enough to show today in the middle of the screen, even when every item
-  // is in the future.
-  const todayKey = new Date().toDateString();
-  const preStepsCount = useMemo(() => {
-    if (range) {
-      const shown = new Set(shownRows.map((row) => row.id));
-      const earliest = tasks.reduce(
-        (first, t) => (shown.has(t.id) && t.start < first ? t.start : first),
-        range.to,
-      );
-      return preStepsTo(range.from, earliest, viewMode);
-    }
-    const halfScreen = Math.ceil(window.innerWidth / columnWidth / 2);
-    const latestStart = tasks.reduce((latest, t) => (t.start > latest ? t.start : latest), new Date(0));
-    return halfScreen + columnsBetween(new Date(), latestStart, viewMode) + 1;
-  }, [tasks, shownRows, range, todayKey, viewMode, columnWidth]);
-
-  const toggle = (task: Task) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(task.id)) next.delete(task.id);
-      else next.add(task.id);
+  const toggle = useCallback((id: string) => {
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(id)) next.add(id);
       return next;
     });
-  };
+  }, []);
+  const showTooltip = useCallback((row: Row, event: React.MouseEvent<HTMLElement>) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    setHover({ row, x: event.clientX, top: box.top, bottom: box.bottom });
+  }, []);
+  const hideTooltip = useCallback(() => setHover(null), []);
 
-  const openInGitLab = (task: Task) => {
-    const url = urls.get(task.id);
-    if (url) window.open(url, '_blank', 'noopener');
-  };
+  if (!hasRows) return null;
 
-  if (tasks.length === 0) return null;
+  // Rows and columns on screen, plus a margin. The chart is never taller than the window.
+  const visibleHeight = Math.min(viewport.height, window.innerHeight);
+  const firstRow = Math.max(0, Math.floor((viewport.top - HEADER_HEIGHT) / ROW_HEIGHT) - OVERSCAN_ROWS);
+  const lastRow = Math.min(rows.length, Math.ceil((viewport.top + visibleHeight) / ROW_HEIGHT) + OVERSCAN_ROWS);
+  const firstColumn = Math.max(0, Math.floor(viewport.left / timeline.columnWidth) - OVERSCAN_COLUMNS);
+  const lastColumn = Math.min(
+    timeline.columns,
+    Math.ceil((viewport.left + viewport.width - LIST_WIDTH) / timeline.columnWidth) + OVERSCAN_COLUMNS,
+  );
+  const now = new Date();
+  const todayX = now >= timeline.from && now < timeline.to ? timeline.x(now) : undefined;
+  const bodyHeight = rows.length * ROW_HEIGHT;
 
   return (
     <div ref={chartRef} className="gantt-chart card">
-      <ClosedHatchPattern />
-      <RowInfoContext.Provider value={rowInfo}>
-        <Gantt
-          tasks={tasks}
-          viewMode={viewMode}
-          preStepsCount={preStepsCount}
-          todayColor="transparent"
-          listCellWidth={`${LIST_WIDTH}px`}
-          rowHeight={ROW_HEIGHT}
-          headerHeight={HEADER_HEIGHT}
-          ganttHeight={ganttHeight}
-          barCornerRadius={6}
-          barFill={60}
-          fontFamily={FONT}
-          fontSize="12px"
-          TaskListHeader={TaskListHeader}
-          TaskListTable={TaskListTable}
-          TooltipContent={TooltipContent}
-          columnWidth={columnWidth}
-          onExpanderClick={toggle}
-          onDoubleClick={openInGitLab}
-        />
-      </RowInfoContext.Provider>
+      <div className="gantt-scroll" ref={scrollRef} onScroll={onScroll} style={{ maxHeight }}>
+        <div className="gantt-canvas" style={{ width: LIST_WIDTH + timeline.width, height: HEADER_HEIGHT + bodyHeight }}>
+          <div className="gantt-header" style={{ height: HEADER_HEIGHT }}>
+            <TaskListHeader />
+            <Calendar timeline={timeline} first={firstColumn} last={lastColumn} todayX={todayX} />
+          </div>
+          <div
+            className="gantt-body"
+            style={{ height: bodyHeight, ['--column-width' as string]: `${timeline.columnWidth}px` }}
+          >
+            {rows.slice(firstRow, lastRow).map((row, i) => (
+              <ChartRow
+                key={row.node.id}
+                row={row}
+                index={firstRow + i}
+                expanded={expanded.has(row.node.id)}
+                timeline={timeline}
+                range={range}
+                onToggle={toggle}
+                onHover={showTooltip}
+                onLeave={hideTooltip}
+              />
+            ))}
+            {todayX !== undefined && <div className="today-line" style={{ left: LIST_WIDTH + todayX }} />}
+          </div>
+        </div>
+      </div>
+      {hover && <Tooltip hover={hover} />}
     </div>
   );
 });
+
+/** The calendar header: groups (months, or years in Month view) above the columns. */
+function Calendar({ timeline, first, last, todayX }: { timeline: Timeline; first: number; last: number; todayX?: number }) {
+  const { viewMode, columnWidth } = timeline;
+  const columns: { index: number; start: Date }[] = [];
+  for (let index = first; index < last; index++) {
+    columns.push({ index, start: addColumns(timeline.from, index, viewMode) });
+  }
+  // Consecutive columns of the same group; the first group may start before the screen.
+  const groups: { label: string; from: number; to: number }[] = [];
+  for (const { index, start } of columns) {
+    const label = columnGroup(start, viewMode);
+    const group = groups[groups.length - 1];
+    if (group?.label === label) group.to = index + 1;
+    else groups.push({ label, from: index, to: index + 1 });
+  }
+  if (groups.length > 0) {
+    const head = groups[0];
+    while (head.from > 0 && columnGroup(addColumns(timeline.from, head.from - 1, viewMode), viewMode) === head.label) {
+      head.from--;
+    }
+  }
+  return (
+    <div className="calendar" style={{ width: timeline.width }}>
+      {groups.map((group) => (
+        <div
+          key={`${group.label}-${group.from}`}
+          className="calendar-group"
+          style={{ left: group.from * columnWidth, width: (group.to - group.from) * columnWidth }}
+        >
+          <span>{group.label}</span>
+        </div>
+      ))}
+      {columns.map(({ index, start }) => (
+        <div key={index} className="calendar-cell" style={{ left: index * columnWidth, width: columnWidth }}>
+          {columnLabel(start, viewMode)}
+        </div>
+      ))}
+      {todayX !== undefined && (
+        <div className="today-pill" style={{ left: todayX }}>
+          Today
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ChartRowProps {
+  row: Row;
+  index: number;
+  expanded: boolean;
+  timeline: Timeline;
+  range: DateRange | null;
+  onToggle: (id: string) => void;
+  onHover: (row: Row, event: React.MouseEvent<HTMLElement>) => void;
+  onLeave: () => void;
+}
+
+// Memoized: scrolling only renders the rows that come into view.
+const ChartRow = memo(function ChartRow({ row, index, expanded, timeline, range, onToggle, onHover, onLeave }: ChartRowProps) {
+  return (
+    <div
+      className="gantt-row"
+      data-alt={index % 2 === 1 ? 'true' : undefined}
+      data-parent-type={row.parentType}
+      style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
+    >
+      <TaskListRow row={row} expanded={expanded} onToggle={onToggle} />
+      <div className="timeline-row" style={{ width: timeline.width }}>
+        <Bar row={row} timeline={timeline} range={range} onHover={onHover} onLeave={onLeave} />
+      </div>
+    </div>
+  );
+});
+
+const LABEL_CHAR_WIDTH = 7; // px, rough width of a character of the bar labels
+
+function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'row' | 'timeline' | 'range' | 'onHover' | 'onLeave'>) {
+  const { node } = row;
+  // Cut at the period's edges; the tooltip shows the real dates.
+  const bar = clipBar(node, range);
+  const left = timeline.x(bar.start);
+  const width = Math.max(2, timeline.x(bar.end) - left);
+  const isGroup = node.type === 'milestone' || row.hasChildren;
+  const schedule = rowSchedule(row);
+  const labelInside = node.name.length * LABEL_CHAR_WIDTH + 16 < width;
+  return (
+    <div
+      className="bar"
+      data-type={node.type}
+      data-group={isGroup ? 'true' : undefined}
+      data-schedule={schedule}
+      data-closed={node.closed ? 'true' : undefined}
+      data-undated={missingDatesMessage(node) ? 'true' : undefined}
+      data-nested={row.depth > 0 ? 'true' : undefined}
+      style={{ left, width }}
+      onMouseEnter={(event) => onHover(row, event)}
+      onMouseLeave={onLeave}
+      onDoubleClick={() => node.webUrl && window.open(node.webUrl, '_blank', 'noopener')}
+    >
+      <div className="bar-track" />
+      {/* Epics and milestones: where they should be today, under the real progress. */}
+      {schedule && bar.linearProgress > 0 && (
+        <div className="linear-progress" style={{ width: `${Math.min(100, bar.linearProgress)}%` }} />
+      )}
+      {!node.closed && <div className="bar-progress" style={{ width: `${bar.progress}%` }} />}
+      <span className={labelInside ? 'bar-label inside' : 'bar-label'}>{node.name}</span>
+    </div>
+  );
+}
+
+const TOOLTIP_WIDTH = 260;
+const TOOLTIP_HEIGHT = 150;
+
+function Tooltip({ hover }: { hover: Hover }) {
+  const left = Math.max(8, Math.min(hover.x - 20, window.innerWidth - TOOLTIP_WIDTH - 8));
+  // Below the bar, or above it near the bottom of the window.
+  const below = hover.bottom + 6 + TOOLTIP_HEIGHT < window.innerHeight;
+  const style: React.CSSProperties = below
+    ? { left, top: hover.bottom + 6 }
+    : { left, bottom: window.innerHeight - hover.top + 6 };
+  return (
+    <div className="gantt-tooltip-anchor" style={style}>
+      <TooltipContent row={hover.row} />
+    </div>
+  );
+}

@@ -1,16 +1,11 @@
-import React, { createContext, useContext } from 'react';
-import { Task } from 'gantt-task-react';
-import { FlatGanttTask } from '../utils/flatten';
+import React from 'react';
+import { Row } from '../utils/flatten';
 import { ChevronIcon, WarningIcon } from './Icons';
 import { missingDatesMessage, scheduleLabel, scheduleStatus } from '../utils/schedule';
-import { parseDay } from '../utils/today';
+import { parseDay } from '../utils/timeline';
 
-// Replacements for gantt-task-react's list and tooltip: the list shows only the item
-// names (no From/To columns), and the dates move to the tooltip shown on a bar.
-
-/** Tree position of each row by task ID, provided by GanttChart (the library only
- * hands its own Task objects to the list). */
-export const RowInfoContext = createContext<Map<string, FlatGanttTask>>(new Map());
+// The list side of a chart row (only the item's name, the dates are in the tooltip) and the
+// tooltip shown on a bar.
 
 const dateFormat: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
 
@@ -18,103 +13,81 @@ export function formatDay(date: Date): string {
   return date.toLocaleDateString('en-US', dateFormat);
 }
 
-export const TaskListHeader: React.FC<{
-  headerHeight: number;
-  rowWidth: string;
-  fontFamily: string;
-  fontSize: string;
-}> = ({ headerHeight, rowWidth }) => (
-  <div className="task-list-header" style={{ height: headerHeight, width: rowWidth }}>
-    Name
-  </div>
-);
+/** Schedule status of a group row (epic, milestone or any item with children), undefined
+ * for leaves and for rows whose status means nothing (closed, dates made up). */
+export function rowSchedule(row: Row) {
+  const { node } = row;
+  const isGroup = node.type === 'milestone' || row.hasChildren;
+  if (!isGroup || node.closed || missingDatesMessage(node)) return undefined;
+  return scheduleStatus(node.progress, node.linearProgress);
+}
 
-export const TaskListTable: React.FC<{
-  rowHeight: number;
-  rowWidth: string;
-  fontFamily: string;
-  fontSize: string;
-  locale: string;
-  tasks: Task[];
-  selectedTaskId: string;
-  setSelectedTask: (taskId: string) => void;
-  onExpanderClick: (task: Task) => void;
-}> = ({ rowHeight, rowWidth, tasks, onExpanderClick }) => {
-  const rows = useContext(RowInfoContext);
+export const TaskListHeader: React.FC = () => <div className="task-list-header">Name</div>;
+
+export const TaskListRow: React.FC<{
+  row: Row;
+  expanded: boolean;
+  onToggle: (id: string) => void;
+}> = ({ row, expanded, onToggle }) => {
+  const { node, depth } = row;
+  const isGroup = node.type === 'milestone' || row.hasChildren;
+  const missingDates = missingDatesMessage(node);
   return (
-    <div className="task-list">
-      {tasks.map((task) => {
-        const row = rows.get(task.id);
-        const depth = row?.depth ?? 0;
-        // hideChildren is only defined on groups: undefined means a leaf, without chevron.
-        const isGroup = task.hideChildren !== undefined;
-        const expanded = task.hideChildren === false;
-        const missingDates = row && missingDatesMessage(row);
-        return (
-          <div
-            key={task.id}
-            className="task-list-row"
-            style={{ height: rowHeight }}
-            data-depth={depth}
-            data-parent-type={row?.parentType}
-            data-expanded={expanded ? 'true' : undefined}
-            data-schedule={
-              isGroup && row && !row.closed && !missingDates ? scheduleStatus(row.progress, row.linearProgress) : undefined
-            }
-            data-closed={row?.closed ? 'true' : undefined}
-            data-undated={missingDates ? 'true' : undefined}
+    <div
+      className="task-list-row"
+      data-depth={depth}
+      data-parent-type={row.parentType}
+      data-expanded={isGroup && expanded ? 'true' : undefined}
+      data-schedule={rowSchedule(row)}
+      data-closed={node.closed ? 'true' : undefined}
+      data-undated={missingDates ? 'true' : undefined}
+    >
+      <div className="task-list-cell" title={node.name}>
+        {row.guides.map((line, level) => (
+          <span key={level} className={line ? 'tree-guide line' : 'tree-guide'} />
+        ))}
+        {depth > 0 && <span className={row.isLast ? 'tree-branch last' : 'tree-branch'} />}
+        {/* Milestones are groups even when empty; only items with children can open. */}
+        {row.hasChildren ? (
+          <button
+            type="button"
+            className="chevron"
+            aria-label={expanded ? 'Collapse' : 'Expand'}
+            aria-expanded={expanded}
+            onClick={() => onToggle(node.id)}
           >
-            <div className="task-list-cell" style={{ width: rowWidth }} title={task.name}>
-              {row?.guides.map((line, level) => (
-                <span key={level} className={line ? 'tree-guide line' : 'tree-guide'} />
-              ))}
-              {depth > 0 && <span className={row?.isLast ? 'tree-branch last' : 'tree-branch'} />}
-              {isGroup ? (
-                <button
-                  type="button"
-                  className="chevron"
-                  aria-label={expanded ? 'Collapse' : 'Expand'}
-                  aria-expanded={expanded}
-                  onClick={() => onExpanderClick(task)}
-                >
-                  <ChevronIcon size={12} />
-                </button>
-              ) : (
-                <span className="chevron-spacer" />
-              )}
-              {row && <span className="task-type-dot" style={{ background: `var(--${row.type})` }} />}
-              <div className="task-list-name">{task.name}</div>
-              {missingDates && (
-                <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
-                  <WarningIcon size={13} />
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })}
+            <ChevronIcon size={12} />
+          </button>
+        ) : (
+          <span className="chevron-spacer" />
+        )}
+        <span className="task-type-dot" style={{ background: `var(--${node.type})` }} />
+        <div className="task-list-name">{node.name}</div>
+        {missingDates && (
+          <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
+            <WarningIcon size={13} />
+          </span>
+        )}
+      </div>
     </div>
   );
 };
 
-export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily: string }> = ({ task }) => {
-  const row = useContext(RowInfoContext).get(task.id);
-  // task.progress is forced to 100 for closed rows (full hatched bar): use the real one.
-  const progress = Math.round(row?.progress ?? task.progress);
-  const closed = !!row?.closed;
-  // Epics and milestones also show their expected (linear) progress, drawn on their bar.
-  const isGroup = task.type === 'project';
-  const linear = row?.linearProgress ?? 0;
+export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
+  const { node } = row;
+  const progress = Math.round(node.progress);
+  const closed = !!node.closed;
+  const linear = node.linearProgress;
   // Without dates in GitLab, the dates shown are made up: no schedule status.
-  const missingDates = row && missingDatesMessage(row);
-  const scheduled = isGroup && !closed && !missingDates;
-  const status = closed ? 'closed' : scheduled ? scheduleStatus(progress, linear) : undefined;
+  const missingDates = missingDatesMessage(node);
+  const schedule = rowSchedule(row);
+  const status = closed ? 'closed' : schedule;
   return (
-    <div className="gantt-tooltip" data-status={status} data-undated={missingDates ? 'true' : undefined}>
-      <strong>{task.name}</strong>
+    <div className="gantt-tooltip" role="tooltip" data-status={status} data-undated={missingDates ? 'true' : undefined}>
+      <strong>{node.name}</strong>
+      {/* The real dates: the bar may be cut at the edges of the period shown. */}
       <p>
-        {/* The real dates: the bar may be cut at the edges of the period shown. */}
-        From {formatDay(row ? parseDay(row.start) : task.start)} to {formatDay(row ? parseDay(row.end) : task.end)}
+        From {formatDay(parseDay(node.start))} to {formatDay(parseDay(node.end))}
       </p>
       <p>{progress}% complete</p>
       {closed && (
@@ -128,13 +101,13 @@ export const TooltipContent: React.FC<{ task: Task; fontSize: string; fontFamily
           <strong>{missingDates}</strong>
         </p>
       )}
-      {scheduled && (
+      {schedule && (
         <p className="schedule" data-status={status}>
           Expected {Math.round(linear)}% · <strong>{scheduleLabel(progress, linear)}</strong>
         </p>
       )}
       <div className="progress-track">
-        {scheduled && <div className="progress-linear" style={{ width: `${Math.min(100, linear)}%` }} />}
+        {schedule && <div className="progress-linear" style={{ width: `${Math.min(100, linear)}%` }} />}
         <div className="progress-value" style={{ width: `${progress}%` }} />
       </div>
     </div>

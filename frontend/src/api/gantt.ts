@@ -11,11 +11,14 @@ export async function fetchConfig(): Promise<AppConfig> {
   return data;
 }
 
-export async function fetchGantt(refresh = false): Promise<GanttTask[]> {
-  const { data } = await axios.get<GanttTask[]>('/api/gantt', {
+/** The chart of the group, and when its data was fetched from GitLab (the backend may
+ * answer from its cache, see X-Fetched-At). */
+export async function fetchGantt(refresh = false): Promise<{ tasks: GanttTask[]; fetchedAt: Date }> {
+  const { data, headers } = await axios.get<GanttTask[]>('/api/gantt', {
     params: refresh ? { refresh: 1 } : undefined,
   });
-  return data;
+  const fetchedAt = new Date(String(headers['x-fetched-at'] ?? ''));
+  return { tasks: data, fetchedAt: isNaN(fetchedAt.getTime()) ? new Date() : fetchedAt };
 }
 
 /** Labels of the group and of its ancestors, sorted by title. */

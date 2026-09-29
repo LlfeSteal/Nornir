@@ -1,5 +1,4 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { ViewMode } from 'gantt-task-react';
 import { GanttChart, GanttChartHandle } from './components/GanttChart';
 import { Toolbar } from './components/Toolbar';
 import { Legend } from './components/Legend';
@@ -7,7 +6,8 @@ import { FilterBar } from './components/FilterBar';
 import { EmptyState, ErrorBanner, Skeleton } from './components/StateViews';
 import { AppConfig, errorMessage, fetchConfig, fetchGantt, fetchLabels } from './api/gantt';
 import { GanttTask, Label } from './types/gantt';
-import { ColorSchemeContext, useAppearance } from './utils/appearance';
+import { useAppearance } from './utils/appearance';
+import { ViewMode } from './utils/timeline';
 import { withoutClosed } from './utils/flatten';
 import { DEFAULT_FILTERS, Filters, applyFilters, labelOptions } from './utils/filters';
 import { useStoredBoolean, useStoredValue } from './utils/preferences';
@@ -28,7 +28,7 @@ export const App: React.FC = () => {
   const [periodOffset, setPeriodOffset] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>(() => suggestedViewMode(preset) ?? ViewMode.Week);
   const chart = useRef<GanttChartHandle>(null);
-  const { appearance, scheme, setAppearance } = useAppearance();
+  const { appearance, setAppearance } = useAppearance();
   // Closed items are hidden unless the user asks for them (remembered).
   const [showClosed, setShowClosed] = useStoredBoolean('nornir.showClosed', false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -42,8 +42,10 @@ export const App: React.FC = () => {
     // the chart: without them, the Labels menu still lists the labels found on the items.
     fetchLabels(refresh).then(setGroupLabels, () => undefined);
     try {
-      setData(await fetchGantt(refresh));
-      setLastUpdated(new Date());
+      const { tasks, fetchedAt } = await fetchGantt(refresh);
+      setData(tasks);
+      // When the data comes from the backend's cache, the time it was fetched from GitLab.
+      setLastUpdated(fetchedAt);
     } catch (err) {
       setError(errorMessage(err));
       setData(null);
@@ -82,7 +84,7 @@ export const App: React.FC = () => {
   const noMatch = hasOpenItems && !emptyPeriod && !hasItems;
 
   return (
-    <ColorSchemeContext.Provider value={scheme}>
+    <>
       <Toolbar
         config={config}
         lastUpdated={lastUpdated}
@@ -150,6 +152,6 @@ export const App: React.FC = () => {
             expanded rows survive until the filters are cleared. */}
         {hasOpenItems && filtered && <GanttChart ref={chart} data={filtered} viewMode={viewMode} range={range} />}
       </main>
-    </ColorSchemeContext.Provider>
+    </>
   );
 };
