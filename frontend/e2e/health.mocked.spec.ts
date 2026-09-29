@@ -30,7 +30,7 @@ async function glyph(page: Page, name: string) {
 /** The bar whose label is `name`. */
 const bar = (page: Page, name: string) => page.locator('.bar', { has: page.locator('.bar-label', { hasText: name }) }).first();
 
-/** The dashed outline of a bar (or legend swatch): its style and color as #rrggbb. */
+/** The outline of a bar or legend swatch: its style and color as #rrggbb. */
 async function outline(locator: ReturnType<Page['locator']>) {
   const { style, color } = await locator.evaluate((el) => ({ style: getComputedStyle(el).outlineStyle, color: getComputedStyle(el).outlineColor }));
   return { style, color: toHex(color) };
@@ -79,18 +79,15 @@ test('flags the rows at risk or needing attention, the same glyph whether it com
   expect(webhooks).toMatchObject({ text: '!', label: 'Needs attention' });
   expect(toHex(webhooks.background)).toBe(ORANGE);
 
-  // A dashed outline around the bars: red at risk, orange needs attention, own or from below.
-  expect(await outline(bar(page, 'Refund API'))).toEqual({ style: 'dashed', color: RED });
-  expect(await outline(bar(page, 'Webhooks'))).toEqual({ style: 'dashed', color: ORANGE });
-  expect(await outline(bar(page, 'Payments'))).toEqual({ style: 'dashed', color: RED });
-  expect(await outline(bar(page, 'Sprint 1'))).toEqual({ style: 'dashed', color: ORANGE });
-  expect((await outline(bar(page, 'Onboarding'))).style).toBe('none');
+  // No outline around the bars: the glyph is enough.
+  for (const name of ['Refund API', 'Webhooks', 'Payments', 'Sprint 1', 'Onboarding']) {
+    expect((await outline(bar(page, name))).style).toBe('none');
+  }
 
   // A closed item isn't flagged, even with a health status.
   await page.getByRole('button', { name: 'Closed' }).click();
   await expect(listRow(page, 'Old risk')).toBeVisible();
   await expect(listRow(page, 'Old risk').locator('.health')).toHaveCount(0);
-  expect((await outline(bar(page, 'Old risk'))).style).toBe('none');
 
   // The bars carry the same glyph before their label; their color stays the schedule's.
   const refundBar = page.locator('.bar', { has: page.locator('.bar-label', { hasText: 'Refund API' }) });
@@ -146,17 +143,15 @@ test('the glyphs follow the dark appearance', async ({ page }) => {
   const payments = await glyph(page, 'Payments');
   expect(toHex(payments.background)).toBe(DARK_RED);
   expect(toHex(payments.color)).toBe('#ffffff');
-  expect(await outline(bar(page, 'Payments'))).toEqual({ style: 'dashed', color: DARK_RED });
 });
 
-test('the legend explains the glyphs and the outlines', async ({ page }) => {
+test('the legend explains the glyphs', async ({ page }) => {
   await page.goto('/');
   const legend = page.getByLabel('Legend');
   const item = (text: string) => legend.locator('.legend-health', { hasText: text });
   await expect(item('At risk').locator('.health')).toHaveText('!!');
   await expect(item('Needs attention').locator('.health')).toHaveText('!');
-  expect(await outline(item('At risk').locator('.legend-swatch'))).toEqual({ style: 'dashed', color: RED });
-  expect(await outline(item('Needs attention').locator('.legend-swatch'))).toEqual({ style: 'dashed', color: ORANGE });
-  // Bars without dates now have gray dashes: orange dashes only mean "needs attention".
+  await expect(item('At risk').locator('.legend-swatch')).toHaveCount(0);
+  // Bars without dates have gray dashes.
   expect(await outline(legend.locator('.legend-swatch.undated'))).toEqual({ style: 'dashed', color: '#8e8e93' });
 });

@@ -7,7 +7,7 @@ const TYPES = [
   { label: 'Issue', color: 'var(--issue)' },
 ];
 
-// GitLab health status: a glyph in the list and a dashed outline around the bar, see utils/health.ts.
+// GitLab health status: a glyph in the list and on the bar, see utils/health.ts.
 const HEALTH = [
   { label: 'At risk', level: 'atRisk' },
   { label: 'Needs attention', level: 'needsAttention' },
@@ -42,7 +42,6 @@ export const Legend: React.FC = () => (
       {HEALTH.map((item) => (
         <span key={item.level} className="legend-item legend-health">
           <HealthBadge level={item.level} />
-          <span className="legend-swatch health-outline" data-level={item.level} />
           {item.label}
         </span>
       ))}

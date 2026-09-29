@@ -36,7 +36,7 @@
   --closed-bg: rgba(142, 142, 147, 0.18); /* systemGray, hatched */
   --closed-stroke: rgba(142, 142, 147, 0.45);
   --undated: #aeaeb2; /* systemGray2: bars without dates in GitLab */
-  --undated-stroke: #8e8e93; /* systemGray: their dashed outline (orange dashes mean "needs attention") */
+  --undated-stroke: #8e8e93; /* systemGray: their dashed outline */
   --warning: var(--orange);
   /* GitLab health status, shown as a glyph (never as the bar color, which is the schedule) */
   --health-needs-attention: var(--orange);
@@ -171,8 +171,6 @@ button { font: inherit; color: inherit; }
 .legend-swatch.linear { opacity: 0.55; }
 .legend-swatch.track { opacity: 0.3; }
 .legend-swatch.undated { background: color-mix(in srgb, var(--undated) 35%, transparent); outline: 1.5px dashed var(--undated-stroke); outline-offset: -1.5px; }
-.legend-swatch.health-outline { background: var(--fill); outline: 1.5px dashed var(--health-needs-attention); outline-offset: 1px; }
-.legend-swatch.health-outline[data-level='atRisk'] { outline-color: var(--health-at-risk); }
 .legend-item .health { margin-left: 0; cursor: inherit; }
 .legend-swatch.overrun { background: repeating-linear-gradient(45deg, var(--overrun) 0 2px, color-mix(in srgb, var(--overrun) 30%, var(--card)) 2px 4px); }
 .legend-swatch.closed { background: repeating-linear-gradient(45deg, var(--closed-bg) 0 2px, var(--closed-stroke) 2px 4px); }
@@ -395,10 +393,6 @@ button { font: inherit; color: inherit; }
   position: absolute; top: 0; bottom: 0; border-radius: 0 6px 6px 0;
   background: repeating-linear-gradient(45deg, var(--overrun) 0 3px, color-mix(in srgb, var(--overrun) 30%, var(--card)) 3px 6px);
 }
-/* Health status: a dashed outline just outside the bar, orange (needs attention) or red (at
-   risk), for its own status or one of its open descendants' */
-.bar[data-health] { outline: 1.5px dashed var(--health-needs-attention); outline-offset: 1.5px; }
-.bar[data-health='atRisk'] { outline-color: var(--health-at-risk); }
 .bar[data-undated]:not([data-group]) .bar-label.inside { color: var(--text); }
 /* The health glyph before the label, outlined with the card color to stand out on the bar */
 .bar-label .health { margin: 0 5px 0 0; cursor: inherit; box-shadow: 0 0 0 1.5px var(--card); }
