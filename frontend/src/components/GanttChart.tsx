@@ -16,6 +16,7 @@ import {
 import { clipBar, DateRange } from '../utils/period';
 import { missingDatesMessage } from '../utils/schedule';
 import { healthMessage, rowHealth } from '../utils/health';
+import { overrun } from '../utils/overrun';
 import { HealthBadge } from './Icons';
 
 // The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
@@ -309,6 +310,10 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
   const schedule = rowSchedule(row);
   const health = rowHealth(node);
   const labelInside = node.name.length * LABEL_CHAR_WIDTH + (health ? 20 : 0) + 16 < width;
+  // The part planned past the parent's end, cut like the bar at the period's edges.
+  const past = overrun(node, row.parent);
+  const pastFrom = past ? timeline.x(past.from > bar.start ? past.from : bar.start) : 0;
+  const pastWidth = past ? timeline.x(past.to < bar.end ? past.to : bar.end) - pastFrom : 0;
   return (
     <div
       className="bar"
@@ -319,6 +324,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       data-undated={missingDatesMessage(node) ? 'true' : undefined}
       data-nested={row.depth > 0 ? 'true' : undefined}
       data-health={health}
+      data-overrun={past ? 'true' : undefined}
       style={{ left, width }}
       onMouseEnter={(event) => onHover(row, event)}
       onMouseLeave={onLeave}
@@ -330,6 +336,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
         <div className="linear-progress" style={{ width: `${Math.min(100, bar.linearProgress)}%` }} />
       )}
       {!node.closed && <div className="bar-progress" style={{ width: `${bar.progress}%` }} />}
+      {pastWidth > 0 && <div className="bar-overrun" style={{ left: pastFrom - left, width: pastWidth }} />}
       <span className={labelInside ? 'bar-label inside' : 'bar-label'}>
         {health && <HealthBadge level={health} label={healthMessage(node)} />}
         {node.name}

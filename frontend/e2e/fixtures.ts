@@ -107,3 +107,29 @@ export const healthTree = [
     children: [{ id: 'I5', name: 'Logs', type: 'issue', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 45 }],
   },
 ];
+
+// Children planned past their parent's end. Under "Parent epic" (Oct 1 → 20): "Late issue"
+// ends 5 days after it; the others are inside it, start before it, have a made-up due date
+// or are closed, and aren't flagged. "Sprint issue" ends 2 days after its milestone.
+// "Next year issue" ends 26 days after "Quarter parent", past the end of Q4 2026.
+const day = (start: string, end: string) => ({ start, end, progress: 0, linearProgress: 0 });
+export const overrunTree = [
+  {
+    id: 'M1', name: '[Milestone] Sprint 1', type: 'milestone', ...day('2026-10-01', '2026-10-16'),
+    children: [{ id: 'I9_ms_I9', name: 'Sprint issue', type: 'issue', ...day('2026-10-08', '2026-10-18') }],
+  },
+  {
+    id: 'E1', name: 'Parent epic', type: 'epic', ...day('2026-10-01', '2026-10-20'),
+    children: [
+      { id: 'I1', name: 'Late issue', type: 'issue', ...day('2026-10-10', '2026-10-25') },
+      { id: 'I2', name: 'Inside issue', type: 'issue', ...day('2026-10-05', '2026-10-15') },
+      { id: 'I3', name: 'Early issue', type: 'issue', ...day('2026-09-25', '2026-10-10') },
+      { id: 'I4', name: 'No due issue', type: 'issue', noDueDate: true, ...day('2026-10-12', '2026-10-26') },
+      { id: 'I5', name: 'Closed late issue', type: 'issue', closed: true, ...day('2026-10-10', '2026-10-28'), progress: 100 },
+    ],
+  },
+  {
+    id: 'E2', name: 'Quarter parent', type: 'epic', ...day('2026-10-01', '2026-12-20'),
+    children: [{ id: 'I6', name: 'Next year issue', type: 'issue', ...day('2026-12-01', '2027-01-15') }],
+  },
+];

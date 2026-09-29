@@ -4,6 +4,7 @@ import { ChevronIcon, HealthBadge, WarningIcon } from './Icons';
 import { missingDatesMessage, scheduleLabel, scheduleStatus } from '../utils/schedule';
 import { parseDay } from '../utils/timeline';
 import { HEALTH_LABELS, healthCountsMessage, healthMessage, rowHealth } from '../utils/health';
+import { overrun, overrunMessage } from '../utils/overrun';
 
 // The list side of a chart row (only the item's name, the dates are in the tooltip) and the
 // tooltip shown on a bar.
@@ -86,6 +87,7 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
   const missingDates = missingDatesMessage(node);
   const schedule = rowSchedule(row);
   const status = closed ? 'closed' : schedule;
+  const past = overrun(node, row.parent);
   return (
     <div className="gantt-tooltip" role="tooltip" data-status={status} data-undated={missingDates ? 'true' : undefined}>
       <strong>{node.name}</strong>
@@ -103,6 +105,11 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
         <p className="schedule missing-dates-note">
           <WarningIcon size={12} />
           <strong>{missingDates}</strong>
+        </p>
+      )}
+      {past && row.parent && (
+        <p className="overrun-note">
+          <strong>{overrunMessage(past, row.parent)}</strong>
         </p>
       )}
       {node.health && (

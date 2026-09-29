@@ -3,6 +3,7 @@ import { GanttTask, GanttTaskType } from '../types/gantt';
 /** A row shown in the chart: an item of the tree and its place in it. */
 export interface Row {
   node: GanttTask;
+  parent?: GanttTask; // the row it is shown under, none at the top level
   parentType?: GanttTaskType;
   hasChildren: boolean;
   depth: number; // 0 for top-level rows
@@ -20,7 +21,7 @@ export function visibleRows(nodes: GanttTask[], expanded: Set<string>): Row[] {
     list.forEach((node, index) => {
       const hasChildren = !!node.children && node.children.length > 0;
       const isLast = index === list.length - 1;
-      rows.push({ node, parentType: parent?.type, hasChildren, depth, isLast, guides });
+      rows.push({ node, parent, parentType: parent?.type, hasChildren, depth, isLast, guides });
       if (hasChildren && expanded.has(node.id)) {
         // Top-level rows have no connector, so no line goes down from them.
         visit(node.children!, node, depth + 1, depth === 0 ? [] : [...guides, !isLast]);

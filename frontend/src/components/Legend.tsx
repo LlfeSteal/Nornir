@@ -7,13 +7,13 @@ const TYPES = [
   { label: 'Issue', color: 'var(--issue)' },
 ];
 
-// Colors of epic and milestone bars, see utils/schedule.ts.
 // GitLab health status: a glyph in the list and a dashed outline around the bar, see utils/health.ts.
 const HEALTH = [
   { label: 'At risk', level: 'atRisk' },
   { label: 'Needs attention', level: 'needsAttention' },
 ] as const;
 
+// Colors of epic and milestone bars, see utils/schedule.ts.
 const STATUSES = [
   { label: 'On track', color: 'var(--on-track)' },
   { label: 'Up to 5% behind', color: 'var(--at-risk)' },
@@ -59,6 +59,8 @@ export const Legend: React.FC = () => (
         Closed
         <span className="legend-swatch undated" />
         No dates
+        <span className="legend-swatch overrun" />
+        Past its parent
       </span>
       <span className="legend-item">
         <span className="legend-line" />
