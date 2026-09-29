@@ -2,7 +2,8 @@ import React from 'react';
 import { FilterMenu } from './FilterMenu';
 import { ClearIcon, SearchIcon } from './Icons';
 import { GanttTaskType } from '../types/gantt';
-import { DEFAULT_FILTERS, FilterOption, Filters, isFiltering } from '../utils/filters';
+import { DEFAULT_FILTERS, FilterOption, Filters, HEALTH_OPTIONS, isFiltering } from '../utils/filters';
+import { HealthStatus } from '../types/gantt';
 
 const TYPES: { value: GanttTaskType; label: string }[] = [
   { value: 'milestone', label: 'Milestones' },
@@ -16,7 +17,8 @@ interface Props {
   labels: FilterOption[];
 }
 
-/** Picks the items to show: search field, item types (all pressed by default, none = nothing) and labels. */
+/** Picks the items to show: search field, item types (all pressed by default, none = nothing),
+ * labels and health status. */
 export const FilterBar: React.FC<Props> = ({ filters, onChange, labels }) => {
   const toggleType = (type: GanttTaskType) =>
     onChange({
@@ -69,6 +71,14 @@ export const FilterBar: React.FC<Props> = ({ filters, onChange, labels }) => {
         selected={filters.labels}
         onChange={(values) => onChange({ ...filters, labels: values })}
         emptyText="No labels in this group"
+      />
+      <FilterMenu
+        label="Health"
+        plural="statuses"
+        options={HEALTH_OPTIONS}
+        selected={filters.health}
+        onChange={(values) => onChange({ ...filters, health: values as HealthStatus[] })}
+        emptyText="No health status"
       />
       {isFiltering(filters) && (
         <button type="button" className="button plain" onClick={() => onChange(DEFAULT_FILTERS)}>

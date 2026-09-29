@@ -76,7 +76,8 @@ export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, 
     if (open && !anchor.current?.contains(event.relatedTarget as Node | null)) close(false);
   };
 
-  const text = selected.length === 0 ? label : selected.length === 1 ? selected[0] : `${selected.length} ${plural}`;
+  const optionLabel = (value: string) => options.find((o) => o.value === value)?.label ?? value;
+  const text = selected.length === 0 ? label : selected.length === 1 ? optionLabel(selected[0]) : `${selected.length} ${plural}`;
   let section: string | undefined;
 
   return (
@@ -89,7 +90,7 @@ export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, 
         aria-haspopup="dialog"
         aria-expanded={open}
         data-active={selected.length > 0 ? 'true' : undefined}
-        title={selected.length > 1 ? selected.join(', ') : undefined}
+        title={selected.length > 1 ? selected.map(optionLabel).join(', ') : undefined}
         onClick={() => (open ? close(false) : setOpen(true))}
       >
         <span className="popup-button-text">{text}</span>

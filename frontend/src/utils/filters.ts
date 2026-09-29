@@ -1,22 +1,26 @@
-import { GanttTask, GanttTaskType, Label } from '../types/gantt';
+import { GanttTask, GanttTaskType, HealthStatus, Label } from '../types/gantt';
+import { HEALTH_LABELS } from './health';
 
 /** What the filter bar asks for: the types of items to show (all of them by default, none =
- * nothing), the labels they must carry (any of them) and a text their name must contain. */
+ * nothing), the labels they must carry (any of them), their health status (any of them) and
+ * a text their name must contain. */
 export interface Filters {
   search: string;
   types: GanttTaskType[];
   labels: string[]; // label titles
+  health: HealthStatus[];
 }
 
 export const ALL_TYPES: GanttTaskType[] = ['milestone', 'epic', 'issue'];
 
-export const DEFAULT_FILTERS: Filters = { search: '', types: ALL_TYPES, labels: [] };
+export const DEFAULT_FILTERS: Filters = { search: '', types: ALL_TYPES, labels: [], health: [] };
 
 export function isFiltering(filters: Filters): boolean {
   return (
     filters.search.trim() !== '' ||
     ALL_TYPES.some((type) => !filters.types.includes(type)) ||
-    filters.labels.length > 0
+    filters.labels.length > 0 ||
+    filters.health.length > 0
   );
 }
 
@@ -50,6 +54,22 @@ function hasLabel(node: GanttTask, labels: string[]): boolean {
   return node.type === 'milestone' && !!node.children?.some((child) => hasLabel(child, labels));
 }
 
+/** Whether the item's own health status is one of these. Milestones have none: they match
+ * when one of their open items does. */
+function hasHealth(node: GanttTask, health: HealthStatus[]): boolean {
+  if (node.type !== 'milestone') return !!node.health && health.includes(node.health);
+  const openMatch = (list?: GanttTask[]): boolean =>
+    !!list?.some((child) => (!child.closed && hasHealth(child, health)) || openMatch(child.children));
+  return openMatch(node.children);
+}
+
+/** The options of the Health menu, worst first. */
+export const HEALTH_OPTIONS: FilterOption[] = (['atRisk', 'needsAttention', 'onTrack'] as HealthStatus[]).map((status) => ({
+  value: status,
+  label: HEALTH_LABELS[status],
+  color: `var(--health-${status === 'atRisk' ? 'at-risk' : status === 'needsAttention' ? 'needs-attention' : 'on-track'})`,
+}));
+
 /** The items to show. Without filters, the tree itself. Otherwise a flat list of the matching
  * milestones, then epics, then issues, each shown once with its whole content: milestones
  * and epics through their top-level row (the tree has one per epic), issues through a
@@ -60,6 +80,7 @@ export function applyFilters(tree: GanttTask[], filters: Filters): GanttTask[] {
   const matches = (node: GanttTask) =>
     filters.types.includes(node.type) &&
     (filters.labels.length === 0 || hasLabel(node, filters.labels)) &&
+    (filters.health.length === 0 || hasHealth(node, filters.health)) &&
     (!search || normalizeText(node.name).includes(search));
 
   const issues: GanttTask[] = [];

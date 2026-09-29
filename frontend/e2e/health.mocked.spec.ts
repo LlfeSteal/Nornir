@@ -3,7 +3,7 @@ import { healthTree, mockApi } from './fixtures';
 
 // GitLab health status: a "!" (needs attention) or "!!" (at risk) glyph after the name and
 // before the bar label, filled for the row's own status, hollow when it comes from its open
-// descendants; the counts in the help tag and the tooltip.
+// descendants; the counts in the help tag and the tooltip; the Health filter.
 
 const RED = '#ff3b30'; // systemRed, light appearance
 const ORANGE = '#ff9500'; // systemOrange
@@ -111,6 +111,34 @@ test('the tooltip shows the own status and the counts below', async ({ page }) =
   await expect(tooltip).toContainText('Below: 1 at risk · 1 needs attention');
   const below = tooltip.locator('.health-note[data-health="atRisk"] strong');
   expect(toHex(await below.evaluate((el) => getComputedStyle(el).color))).toBe(RED);
+});
+
+test('the Health filter lists the items with that status, milestones by their content', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTitle('Payments')).toBeVisible();
+
+  const pick = async (...options: string[]) => {
+    await page.getByRole('button', { name: /^Health/ }).click();
+    const popover = page.getByRole('dialog', { name: 'Health' });
+    for (const option of options) await popover.getByRole('option', { name: option, exact: true }).click();
+    await page.keyboard.press('Escape');
+    await expect(popover).toHaveCount(0);
+  };
+
+  await pick('At risk');
+  await expect(page.getByRole('button', { name: 'Health: At risk' })).toHaveAttribute('data-active', 'true');
+  await expect.poll(() => rowNames(page)).toEqual(['Refund API']);
+
+  // Any of the statuses: milestones first (by their open items), then epics, then issues.
+  await pick('Needs attention');
+  await expect(page.getByRole('button', { name: 'Health: 2 statuses' })).toBeVisible();
+  await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1', 'Webhooks', 'Refund API']);
+
+  await pick('At risk', 'Needs attention', 'On track');
+  await expect.poll(() => rowNames(page)).toEqual(['Payments']);
+
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1', 'Payments', 'Onboarding']);
 });
 
 test('the glyphs follow the dark appearance', async ({ page }) => {
