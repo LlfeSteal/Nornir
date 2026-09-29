@@ -3,7 +3,7 @@
 Gantt chart of a GitLab group: the epics, milestones and issues of the group and its projects, with their hierarchy. An item attached to both an epic and a milestone shows up under both.
 
 - Go backend (Gin) querying the GitLab GraphQL API, with an in-memory cache (see [Large groups](#large-groups)).
-- React + Vite frontend (`gantt-task-react`), served by nginx.
+- React + Vite frontend with its own Gantt chart in plain HTML and CSS, served by nginx.
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - Every epic is also listed at the top level, on top of its place under its parent epic.
 - Expanded children appear right below their parent, indented with tree lines, on a band in the parent's color (purple for a milestone, blue for an epic), with lighter bars than the top-level rows.
 - Everything starts collapsed; the chevrons expand or collapse a milestone or an epic. Expanded rows stay expanded after **Refresh**.
-- The toolbar holds the period, the time scale (Day / Week / Month), **Today** (back to the current period, centered on today) and **Refresh**, with the time of the last update.
+- The toolbar holds the period, the time scale (Day / Week / Month), **Today** (back to the current period, centered on today) and **Refresh**, with the time the data was fetched from GitLab.
 - **Period** (toolbar, `‹ 2026 ›`): the chart shows one period at a time so that long histories or far-off plans stay readable. The menu offers **This quarter**, **This year** (the default), **3 years** (last year to next year) and **All dates**; ‹ and › move one quarter or one year back or forward, to look at the past or further ahead. Items entirely outside the period are hidden (an epic or milestone stays when some of its content is in it), and bars crossing its edges are cut there — hover them for their real dates. Picking a period also picks a suitable time scale (Week for a quarter, Month otherwise). The chosen period is remembered in the browser; the arrows aren't. When nothing falls in the period, **Show all dates** brings everything back. Items without dates only show in periods that contain today.
 - The chart grows with its rows up to the window height; beyond that, the rows scroll inside it while the calendar header stays in view.
 - The chart opens centered on today, marked by a red line and a "Today" label; switching the time scale centers it again.
@@ -65,6 +65,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 Nornir is made for groups with thousands of milestones, epics and issues:
 
 - **Cache.** Walking a large group takes GitLab many pages (100 items each), so the backend keeps the result in memory. Data less than 5 minutes old is served as is; older data (up to a day) is served **at once** while the backend fetches it again in the background, so the next visit is up to date. When `GITLAB_TOKEN` is set, the backend fills the cache when it starts, so the first visitor doesn't wait either. However many people open or refresh the chart, the backend fetches from GitLab **once at a time**, and a fetch goes on even when the page that started it is closed. Its log says how long each fetch took and how many items it found.
+- **Chart.** Only the rows on screen are drawn, so scrolling, expanding and filtering stay immediate with tens of thousands of rows.
 - **Transfer.** nginx compresses the responses (a group of 5,000 items is about 4 MB of JSON, ten times less compressed).
 
 ## Tests

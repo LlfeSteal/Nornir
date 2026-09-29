@@ -5,12 +5,16 @@ const LIST_WIDTH = 260;
 
 /** Horizontal position of the today line, relative to its column and to the chart area. */
 async function todayLinePosition(page: Page) {
-  const line = page.locator('line.today-line');
+  const line = page.locator('.today-line');
   await expect(line).toHaveCount(1);
   const lineBox = (await line.boundingBox())!;
-  const columnBox = (await page.locator('g.today rect').boundingBox())!;
   const chartBox = (await page.locator('.gantt-chart').boundingBox())!;
   const lineX = lineBox.x + lineBox.width / 2;
+  // Today's column: the calendar cell under the line.
+  const cells = await page.locator('.calendar-cell').evaluateAll((all) =>
+    all.map((cell) => ({ x: cell.getBoundingClientRect().x, width: cell.getBoundingClientRect().width })),
+  );
+  const columnBox = cells.find((cell) => lineX >= cell.x && lineX < cell.x + cell.width)!;
   return {
     columnWidth: columnBox.width,
     /** Position of the line inside today's column, from 0 (start) to 1 (end). */
@@ -32,17 +36,32 @@ async function listRows(page: Page) {
       depth: Number(row.getAttribute('data-depth')),
       last: !!row.querySelector('.tree-branch.last'),
       nameX: row.querySelector('.task-list-name')!.getBoundingClientRect().x,
-      background: getComputedStyle(row).backgroundColor,
+      background: getComputedStyle(row).backgroundImage, // the group band is a layer
     })),
   );
 }
 
-/** Fill of the bar whose label is `name` (the first one when the name is repeated). */
+/** The bar whose label is `name` (the first one when the name is repeated). */
+function bar(page: Page, name: string, nth = 0) {
+  return page.locator('.bar', { has: page.locator('.bar-label', { hasText: name }) }).nth(nth);
+}
+
+/** A computed CSS color as #rrggbb (alpha ignored): "rgb(…)" or, from color-mix(), "color(srgb …)". */
+function toHex(color: string) {
+  const numbers = color.match(/[\d.]+/g)!.map(Number);
+  const channels = color.startsWith('color(') ? numbers.slice(0, 3).map((c) => Math.round(c * 255)) : numbers.slice(0, 3);
+  return '#' + channels.map((c) => c.toString(16).padStart(2, '0')).join('');
+}
+
+/** Color of the bar whose label is `name`. */
 async function barFill(page: Page, name: string, nth = 0) {
-  return page
-    .locator('svg text', { hasText: name })
-    .nth(nth)
-    .evaluate((label) => label.parentElement!.querySelector('rect')!.getAttribute('fill')!);
+  return toHex(await bar(page, name, nth).locator('.bar-track').evaluate((track) => getComputedStyle(track).backgroundColor));
+}
+
+/** Whether the bar is drawn with the closed hatch. */
+async function isHatched(page: Page, name: string) {
+  const image = await bar(page, name).locator('.bar-track').evaluate((track) => getComputedStyle(track).backgroundImage);
+  return image.includes('repeating-linear-gradient');
 }
 
 function luminance(hex: string) {
@@ -145,23 +164,25 @@ test.describe('Gantt (mocked API)', () => {
 
     const rows = await listRows(page);
     const child = rows.findIndex((r) => r.name === 'Standalone issue');
-    expect(rows[child].background).toBe(EPIC_BAND);
-    expect(rows.find((r) => r.name === 'Main epic')!.background).not.toBe(EPIC_BAND);
+    expect(rows[child].background).toContain(EPIC_BAND);
+    expect(rows.find((r) => r.name === 'Main epic')!.background).not.toContain(EPIC_BAND);
 
-    // The child's timeline row is the grid rect at its index.
-    const timelineRow = page.locator(`g.rows rect[y="${child * (await rowHeight(page))}"]`);
-    const fill = () => timelineRow.evaluate((rect) => getComputedStyle(rect).fill);
-    await expect.poll(fill).toBe(EPIC_BAND);
+    // The timeline side of the same row.
+    const timelineRow = page.locator('.gantt-row', { has: page.getByTitle('Standalone issue') }).locator('.timeline-row');
+    expect(await timelineRow.evaluate((row) => getComputedStyle(row).backgroundImage)).toContain(EPIC_BAND);
 
     await epicRow.getByRole('button', { name: 'Collapse' }).click();
-    await expect.poll(fill).not.toBe(EPIC_BAND);
+    await expect(timelineRow).toHaveCount(0);
+    // The epic row itself is not tinted.
+    const epicTimeline = page.locator('.gantt-row', { has: page.getByTitle('Main epic') }).locator('.timeline-row');
+    expect(await epicTimeline.evaluate((row) => getComputedStyle(row).backgroundImage)).not.toContain(EPIC_BAND);
   });
 
   test('child bars are lighter than top-level bars', async ({ page }) => {
     await mockApi(page);
     await page.goto('/');
     await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
-    await expect(page.locator('svg text', { hasText: 'Child epic' })).toHaveCount(2);
+    await expect(page.locator('.bar-label', { hasText: 'Child epic' })).toHaveCount(2);
 
     // Same type (epic): the nested one (first, under Main epic) vs its top-level copy.
     const nested = await barFill(page, 'Child epic', 0);
@@ -178,7 +199,8 @@ test.describe('Gantt (mocked API)', () => {
     await expect(page.getByText('From', { exact: true })).toHaveCount(0);
     await expect(page.getByText('To', { exact: true })).toHaveCount(0);
     // No date is written in the list rows.
-    await expect(page.locator('.task-list')).not.toContainText('2026');
+    await expect(page.locator('.task-list-row').first()).toBeVisible();
+    await expect(page.locator('.task-list-row', { hasText: '2026' })).toHaveCount(0);
   });
 
   test('hovering a bar shows its dates in the tooltip', async ({ page }) => {
@@ -187,8 +209,7 @@ test.describe('Gantt (mocked API)', () => {
     await mockApi(page);
     await page.goto('/');
 
-    // The label doesn't receive pointer events: move the mouse onto it, over the bar.
-    const label = await page.locator('svg text', { hasText: 'Main epic' }).boundingBox();
+    const label = await page.locator('.bar-label', { hasText: 'Main epic' }).boundingBox();
     await page.mouse.move(label!.x + label!.width / 2, label!.y + label!.height / 2);
     const tooltip = page.locator('.gantt-tooltip');
     await expect(tooltip).toContainText('Main epic');
@@ -217,16 +238,16 @@ test.describe('Gantt (mocked API)', () => {
     await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
     await mockApi(page);
     await page.goto('/');
-    await expect(page.locator('line.today-line')).toHaveCount(1);
+    await expect(page.locator('.today-line')).toHaveCount(1);
 
     await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Standalone issue')).toBeVisible();
-    const line = page.locator('line.today-line');
+    const line = page.locator('.today-line');
     await expect(line).toHaveCount(1);
     // The line spans every visible row, including the new ones.
     const rows = await page.locator('.task-list-row').count();
     const height = await rowHeight(page);
-    await expect.poll(async () => Number(await line.getAttribute('y2'))).toBeGreaterThanOrEqual(rows * height);
+    await expect.poll(async () => (await line.boundingBox())!.height).toBeGreaterThanOrEqual(rows * height);
   });
 
   test('switches view mode', async ({ page }) => {
@@ -281,21 +302,11 @@ test.describe('Gantt (mocked API)', () => {
     await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
     await mockApi(page);
     await page.goto('/');
-    await expect(page.locator('line.today-line')).toHaveCount(1);
-    await page.waitForTimeout(700); // let the initial centering finish
+    await expect(page.locator('.today-line')).toHaveCount(1);
 
-    // Scroll the timeline all the way to the left, as a user would. A real scroll sends a
-    // stream of events and the library ignores every other one, so send it until it moves.
-    await expect
-      .poll(async () => {
-        await page.locator('.gantt-chart div').evaluateAll((divs) => {
-          const scrollbar = divs.find((d) => getComputedStyle(d).overflowX === 'auto')!;
-          scrollbar.scrollLeft = 0;
-          scrollbar.dispatchEvent(new Event('scroll', { bubbles: true }));
-        });
-        return Math.abs((await todayLinePosition(page)).offsetFromCenter);
-      })
-      .toBeGreaterThan(200);
+    // Scroll the timeline all the way to the left, as a user would.
+    await page.locator('.gantt-scroll').evaluate((scroller) => (scroller.scrollLeft = 0));
+    await expect.poll(async () => Math.abs((await todayLinePosition(page)).offsetFromCenter)).toBeGreaterThan(200);
 
     await page.getByRole('button', { name: 'Today' }).click();
     await expect
@@ -419,17 +430,15 @@ test.describe('Gantt (mocked API)', () => {
     await page.goto('/');
     await expect(page.getByTitle('Main epic')).toBeVisible();
 
-    // The bar group whose label is the given name: track, linear progress, then solid progress.
+    // The layers of the bar whose label is the given name: track, linear progress, then solid progress.
     const layers = (name: string) =>
-      page.locator('svg text', { hasText: name }).first().evaluate((label) => {
-        const bar = label.parentElement!.querySelector('._1KJ6x')!;
-        const rects = [...bar.querySelectorAll(':scope > rect')] as SVGRectElement[];
-        return rects.slice(0, 3).map((rect) => ({
-          cls: rect.getAttribute('class') ?? '',
-          width: Number(rect.getAttribute('width')),
-          opacity: Number(getComputedStyle(rect).opacity),
-        }));
-      });
+      bar(page, name).evaluate((element) =>
+        [...element.querySelectorAll(':scope > div')].map((layer) => ({
+          cls: layer.className,
+          width: layer.getBoundingClientRect().width,
+          opacity: Number(getComputedStyle(layer).opacity),
+        })),
+      );
 
     // Main epic: 50% done, 80% expected → the linear layer is wider than the progress.
     await expect.poll(async () => (await layers('Main epic'))[1]?.cls).toBe('linear-progress');
@@ -447,10 +456,7 @@ test.describe('Gantt (mocked API)', () => {
     // Issues keep their plain bar, without linear layer.
     await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Standalone issue')).toBeVisible();
-    const issueHasLinear = await page
-      .locator('svg text', { hasText: 'Standalone issue' })
-      .evaluate((label) => !!label.parentElement!.querySelector('rect.linear-progress'));
-    expect(issueHasLinear).toBe(false);
+    await expect(bar(page, 'Standalone issue').locator('.linear-progress')).toHaveCount(0);
   });
 
   test('the tooltip tells whether a group is ahead or behind schedule', async ({ page }) => {
@@ -462,7 +468,7 @@ test.describe('Gantt (mocked API)', () => {
     const hover = async (name: string) => {
       await page.mouse.move(0, 0); // leave the previous bar so its tooltip closes
       await expect(page.locator('.gantt-tooltip')).toHaveCount(0);
-      const label = (await page.locator('svg text', { hasText: name }).first().boundingBox())!;
+      const label = (await page.locator('.bar-label', { hasText: name }).first().boundingBox())!;
       await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
     };
     await hover('Main epic');
@@ -491,10 +497,8 @@ test.describe('Gantt (mocked API)', () => {
     await expect(page.locator('.task-list-row', { has: page.getByTitle('Child epic') })).toHaveAttribute('data-schedule', 'at-risk');
 
     // The linear layer follows the status color of its bar.
-    const linearFill = await page
-      .locator('svg text', { hasText: 'Main epic' })
-      .evaluate((label) => label.parentElement!.querySelector('rect.linear-progress')!.getAttribute('fill'));
-    expect(linearFill).toBe('#ff3b30');
+    const linearFill = await bar(page, 'Main epic').locator('.linear-progress').evaluate((layer) => getComputedStyle(layer).backgroundColor);
+    expect(toHex(linearFill)).toBe('#ff3b30');
 
     // Issues keep their type color (teal), never a status color.
     await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
@@ -534,25 +538,22 @@ test.describe('Gantt (mocked API)', () => {
 
     // The closed milestone: hatched bar, no schedule color nor linear layer, grayed name.
     await page.getByRole('button', { name: 'Closed' }).click(); // closed items are hidden by default
-    expect(await barFill(page, '[Milestone] Empty sprint')).toBe('url(#nornir-closed-hatch)');
+    expect(await isHatched(page, '[Milestone] Empty sprint')).toBe(true);
     await expect(row('[Milestone] Empty sprint')).toHaveAttribute('data-closed', 'true');
     await expect(row('[Milestone] Empty sprint')).not.toHaveAttribute('data-schedule', /.+/);
     expect(await nameColor('[Milestone] Empty sprint')).not.toBe(await nameColor('Main epic'));
-    const hasLinear = await page
-      .locator('svg text', { hasText: 'Empty sprint' })
-      .evaluate((label) => !!label.parentElement!.querySelector('rect.linear-progress'));
-    expect(hasLinear).toBe(false);
+    await expect(bar(page, 'Empty sprint').locator('.linear-progress')).toHaveCount(0);
 
     // A closed issue is hatched too, an open one keeps its color.
     await page.getByTitle('Main epic').locator('..').getByRole('button', { name: 'Expand' }).click();
     await expect(page.getByTitle('Standalone issue')).toBeVisible();
-    expect(await barFill(page, 'Done issue')).toBe('url(#nornir-closed-hatch)');
-    expect(await barFill(page, 'Standalone issue')).not.toBe('url(#nornir-closed-hatch)');
+    expect(await isHatched(page, 'Done issue')).toBe(true);
+    expect(await isHatched(page, 'Standalone issue')).toBe(false);
 
     // The tooltip says it is closed, with its real progress.
     // Hover the start of the bar: its label (centered) may be beyond the visible area.
-    const bar = (await page.locator('svg text', { hasText: 'Empty sprint' }).locator('xpath=..').locator('rect').first().boundingBox())!;
-    await page.mouse.move(bar.x + 10, bar.y + bar.height / 2);
+    const box = (await bar(page, 'Empty sprint').boundingBox())!;
+    await page.mouse.move(box.x + 10, box.y + box.height / 2);
     const tooltip = page.locator('.gantt-tooltip');
     await expect(tooltip).toContainText('Closed');
     await expect(tooltip).toContainText('0% complete');
@@ -684,21 +685,21 @@ test.describe('Gantt (mocked API)', () => {
     });
 
     test('the bar is gray with a dashed outline and no schedule', async ({ page }) => {
-      const undated = page.locator('.gantt-chart g[data-undated]');
+      const undated = page.locator('.bar[data-undated]');
       await expect(undated).toHaveCount(2); // the epic and the issue with a due date only
       expect(await barFill(page, 'Undated epic')).toBe('#aeaeb2');
-      await expect(undated.first().locator('._2RbVy')).toHaveCSS('stroke-dasharray', '3px, 2px');
+      await expect(undated.first().locator('.bar-track')).toHaveCSS('outline-style', 'dashed');
 
       // No expected-progress layer and no schedule color, unlike a dated epic that is late.
-      await expect(undated.first().locator('rect.linear-progress')).toHaveCount(0);
-      await expect(page.locator('rect.linear-progress')).toHaveCount(1);
+      await expect(undated.first().locator('.linear-progress')).toHaveCount(0);
+      await expect(page.locator('.linear-progress')).toHaveCount(1);
       await expect(row(page, 'Undated epic')).not.toHaveAttribute('data-schedule');
       await expect(row(page, 'Dated epic')).toHaveAttribute('data-schedule', 'late');
     });
 
     test('the tooltip says the dates are missing instead of judging the schedule', async ({ page }) => {
-      const bar = (await page.locator('.gantt-chart g[data-undated] ._2RbVy').boundingBox())!;
-      await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
+      const box = (await page.locator('.bar[data-undated] .bar-track').first().boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
       const tooltip = page.locator('.gantt-tooltip');
       await expect(tooltip).toContainText('No dates in GitLab');
       await expect(tooltip).not.toContainText('Expected');
@@ -988,7 +989,7 @@ test.describe('Gantt (mocked API)', () => {
     /** Vertical gap between a list row and the label of its bar (0 when they line up). */
     async function rowBarGap(page: Page, name: string) {
       const row = (await page.getByTitle(name).boundingBox())!;
-      const label = (await page.locator('svg text', { hasText: new RegExp(`^${name}$`) }).boundingBox())!;
+      const label = (await page.locator('.bar-label', { hasText: new RegExp(`^${name}$`) }).boundingBox())!;
       return Math.abs(row.y + row.height / 2 - (label.y + label.height / 2));
     }
 
@@ -1019,7 +1020,7 @@ test.describe('Gantt (mocked API)', () => {
 
       // Too many rows: the card stops at the window bottom and the page doesn't scroll.
       await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();
-      await expect(page.getByTitle('Issue 29')).toHaveCount(1);
+      await expect(page.getByTitle('Issue 0')).toBeVisible(); // rows below the fold aren't rendered
       await expect.poll(async () => Math.abs((await gapBelowCard(page)) - 16)).toBeLessThanOrEqual(2);
       expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight)).toBe(true);
 
@@ -1034,7 +1035,7 @@ test.describe('Gantt (mocked API)', () => {
       await mockApi(page, { body: tallTree });
       await page.goto('/');
       await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();
-      await expect(page.getByTitle('Issue 29')).toHaveCount(1);
+      await expect(page.getByTitle('Issue 0')).toBeVisible(); // rows below the fold aren't rendered
       await expect(page.getByTitle('Issue 29')).not.toBeInViewport();
 
       await wheelOverChart(page, 2000);
@@ -1042,7 +1043,7 @@ test.describe('Gantt (mocked API)', () => {
       await expect(page.getByTitle('Epic 0')).not.toBeInViewport();
       // The list and the bars scroll together; the header and the page stay put.
       await expect.poll(() => rowBarGap(page, 'Issue 29')).toBeLessThanOrEqual(2);
-      await expect(page.locator('.gantt-chart ._35nLX')).toBeInViewport();
+      await expect(page.locator('.gantt-chart .gantt-header')).toBeInViewport();
       await expect(page.getByRole('banner')).toBeInViewport();
       expect(await page.evaluate(() => window.scrollY)).toBe(0);
     });
@@ -1052,7 +1053,7 @@ test.describe('Gantt (mocked API)', () => {
       await mockApi(page, { body: tallTree });
       await page.goto('/');
       await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();
-      await expect(page.getByTitle('Issue 29')).toHaveCount(1);
+      await expect(page.getByTitle('Issue 0')).toBeVisible(); // rows below the fold aren't rendered
 
       // Scroll by exactly 10 rows: "Big epic" becomes the first visible row.
       await wheelOverChart(page, 10 * (await rowHeight(page)));
@@ -1071,7 +1072,7 @@ test.describe('Gantt (mocked API)', () => {
       await page.clock.setFixedTime(new Date('2026-10-15T12:00:00'));
       await mockApi(page);
       await page.goto('/');
-      const label = page.locator('svg text', { hasText: 'Main epic' });
+      const label = page.locator('.bar-label', { hasText: 'Main epic' });
       const tooltip = page.locator('.gantt-tooltip');
 
       const hover = async () => {
@@ -1085,7 +1086,7 @@ test.describe('Gantt (mocked API)', () => {
       await expect(tooltip).toHaveCount(0);
 
       await wheelOverChart(page, 500);
-      // The tooltip is placed from the library's scroll offset: it stays next to the bar.
+      // The tooltip stays next to the bar.
       expect(Math.abs((await hover()) - before)).toBeLessThanOrEqual(2);
       expect(await rowBarGap(page, 'Main epic')).toBeLessThanOrEqual(2);
     });

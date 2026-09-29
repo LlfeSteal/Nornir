@@ -1,11 +1,11 @@
 import React from 'react';
-import { ViewMode } from 'gantt-task-react';
 import { AppConfig } from '../api/gantt';
 import { SegmentedControl } from './SegmentedControl';
 import { AppearanceMenu } from './AppearanceMenu';
 import { PeriodControl } from './PeriodControl';
 import { Appearance } from '../utils/appearance';
 import { PeriodPreset } from '../utils/period';
+import { ViewMode } from '../utils/timeline';
 import { ClosedIcon, RefreshIcon, TimelineIcon, TodayIcon } from './Icons';
 
 export const VIEW_MODES: { label: string; value: ViewMode }[] = [
