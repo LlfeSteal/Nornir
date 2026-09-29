@@ -37,6 +37,7 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
           ... on WorkItemWidgetHierarchy { parent { id } }
           ... on WorkItemWidgetWeight { weight }
           ... on WorkItemWidgetLabels { labels { nodes { id title color } } }
+          ... on WorkItemWidgetHealthStatus { healthStatus }
         }
       }
     }

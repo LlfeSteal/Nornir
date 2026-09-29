@@ -539,3 +539,63 @@ func TestLabelsAreSetOnEveryPlacement(t *testing.T) {
 		t.Errorf("an item without labels must have none, got %v", byID["bare"].Labels)
 	}
 }
+
+func health(status string) WorkItemWidget {
+	return WorkItemWidget{Typename: typenameHealth, Type: "HEALTH_STATUS", HealthStatus: &status}
+}
+
+func TestHealthStatusIsCountedOnAncestors(t *testing.T) {
+	// epic > sub > {risky, closedRisky, closedParent > attention}, plus a milestone holding
+	// "sub" and "attention": the milestone counts "attention" once.
+	tree := mustBuild(t, []WorkItemNode{
+		node("epic", "Epic", "OPEN", health(model.HealthOnTrack)),
+		node("sub", "Epic", "OPEN", parent("epic"), milestoneTitled("m1", "Sprint 1"), health(model.HealthNeedsAttention)),
+		node("risky", "Issue", "OPEN", parent("sub"), health(model.HealthAtRisk)),
+		node("closedRisky", "Issue", "CLOSED", parent("sub"), health(model.HealthAtRisk)),
+		node("closedParent", "Issue", "CLOSED", parent("sub")),
+		node("attention", "Task", "OPEN", parent("closedParent"), milestoneTitled("m1", "Sprint 1"), health(model.HealthNeedsAttention)),
+		node("plain", "Issue", "OPEN"),
+	}, []Milestone{{ID: "m1", Title: "Sprint 1"}, {ID: "m2", Title: "Empty"}})
+
+	byID := map[string]model.GanttTask{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			byID[task.ID] = task
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+
+	counts := func(atRisk, attention int) *model.HealthCounts {
+		return model.HealthCounts{AtRisk: atRisk, NeedsAttention: attention}.OrNil()
+	}
+	want := map[string]*model.HealthCounts{
+		"epic":                   counts(1, 2), // sub (attention), risky, attention
+		"sub":                    counts(1, 1), // closedRisky doesn't count
+		"sub_root_sub":           counts(1, 1),
+		"sub_ms_sub":             counts(1, 1),
+		"closedParent":           counts(0, 1), // a closed item passes on its descendants
+		"risky":                  nil,
+		"attention":              nil,
+		"m1":                     counts(1, 2), // "attention" is under m1 twice, counted once
+		"m2":                     nil,
+		"plain":                  nil,
+		"attention_ms_attention": nil,
+		"closedParent_root_sub":  counts(0, 1),
+	}
+	for id, w := range want {
+		task, ok := byID[id]
+		if !ok {
+			t.Fatalf("%s not found in tree %v", id, ids(tree))
+		}
+		if (task.HealthBelow == nil) != (w == nil) || (w != nil && *task.HealthBelow != *w) {
+			t.Errorf("%s healthBelow = %+v, want %+v", id, task.HealthBelow, w)
+		}
+	}
+	for id, h := range map[string]string{"epic": model.HealthOnTrack, "sub_ms_sub": model.HealthNeedsAttention, "closedRisky": model.HealthAtRisk, "plain": ""} {
+		if got := byID[id].Health; got != h {
+			t.Errorf("%s health = %q, want %q", id, got, h)
+		}
+	}
+}

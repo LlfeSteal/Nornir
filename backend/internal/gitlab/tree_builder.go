@@ -17,6 +17,7 @@ const (
 	typenameHierarchy = "WorkItemWidgetHierarchy"
 	typenameWeight    = "WorkItemWidgetWeight"
 	typenameLabels    = "WorkItemWidgetLabels"
+	typenameHealth    = "WorkItemWidgetHealthStatus"
 
 	// defaultWeight is the weight of an item without a GitLab weight.
 	defaultWeight = 1
@@ -105,6 +106,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 				End:         end,
 				WebURL:      node.WebURL,
 				Labels:      extractLabels(node.Widgets),
+				Health:      extractHealth(node.Widgets),
 				NoStartDate: noStart,
 				NoDueDate:   noDue,
 			},
@@ -159,6 +161,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		task.ID = id + suffix
 
 		var weighted []weightedChild
+		var below model.HealthCounts
 		visiting[id] = true
 		for _, childID := range hierarchyChildren[id] {
 			if visiting[childID] { // guard against a cycle in the data
@@ -167,8 +170,12 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			child := materialize(childID, suffix, visiting)
 			task.Children = append(task.Children, child)
 			weighted = append(weighted, weightedChild{progress: child.Progress, weight: items[childID].weight})
+			// The hierarchy is a tree: every descendant is counted once.
+			below.Merge(child.HealthBelow)
+			below.Add(items[childID].openHealth())
 		}
 		delete(visiting, id)
+		task.HealthBelow = below.OrNil()
 
 		if len(task.Children) == 0 {
 			task.Progress = leafProgress(item.closed)
@@ -206,6 +213,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			weighted = append(weighted, weightedChild{progress: child.Progress, weight: items[childID].weight})
 		}
 		ms.Progress = weightedProgress(weighted)
+		ms.HealthBelow = milestoneHealth(milestoneChildren[key], items, hierarchyChildren)
 		result = append(result, ms)
 	}
 	isRoot := make(map[string]bool, len(roots))
@@ -234,6 +242,38 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		collectEpics(id)
 	}
 	return result
+}
+
+// openHealth is the health status an item passes on to its ancestors: its own, while it
+// is open. A closed item passes on nothing of its own, but still passes on its descendants'.
+func (item *parsedItem) openHealth() string {
+	if item.closed {
+		return ""
+	}
+	return item.task.Health
+}
+
+// milestoneHealth counts the open items that need attention or are at risk among a
+// milestone's items and their descendants. An item and its ancestor can both belong to the
+// milestone, so each item is counted once.
+func milestoneHealth(childIDs []string, items map[string]*parsedItem, hierarchyChildren map[string][]string) *model.HealthCounts {
+	var counts model.HealthCounts
+	seen := make(map[string]bool)
+	var walk func(id string)
+	walk = func(id string) {
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		counts.Add(items[id].openHealth())
+		for _, childID := range hierarchyChildren[id] {
+			walk(childID)
+		}
+	}
+	for _, id := range childIDs {
+		walk(id)
+	}
+	return counts.OrNil()
 }
 
 // milestoneKey identifies a milestone by its title (see BuildGanttTree), or by its ID
@@ -320,6 +360,16 @@ func extractLabels(widgets []WorkItemWidget) []model.Label {
 		}
 	}
 	return labels
+}
+
+// extractHealth returns the GitLab health status of an item, "" when it has none.
+func extractHealth(widgets []WorkItemWidget) string {
+	for _, w := range widgets {
+		if w.Typename == typenameHealth && w.HealthStatus != nil {
+			return *w.HealthStatus
+		}
+	}
+	return ""
 }
 
 func extractHierarchyParentID(widgets []WorkItemWidget) string {

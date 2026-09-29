@@ -69,6 +69,8 @@ type WorkItemWidget struct {
 	Parent    *ParentRef `json:"parent,omitempty"`
 	Weight    *int       `json:"weight,omitempty"` // nil: no weight set in GitLab
 	Labels    *LabelConn `json:"labels,omitempty"`
+	// HealthStatus: "onTrack", "needsAttention" or "atRisk", nil when unset.
+	HealthStatus *string `json:"healthStatus,omitempty"`
 }
 
 type Milestone struct {
