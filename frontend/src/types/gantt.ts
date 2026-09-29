@@ -26,6 +26,7 @@ export interface GanttTask {
   closed?: boolean;        // Closed work item or milestone
   noStartDate?: boolean;   // No start date in GitLab: `start` is made up
   noDueDate?: boolean;     // No due date in GitLab: `end` is made up
+  noChildren?: boolean;    // Open epic or milestone without any child item in GitLab
   labels?: Label[];
   health?: HealthStatus;   // Own GitLab health status
   healthBelow?: HealthCounts; // Open descendants at risk / needing attention, when any

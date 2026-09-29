@@ -133,3 +133,23 @@ export const overrunTree = [
     children: [{ id: 'I6', name: 'Next year issue', type: 'issue', ...day('2026-12-01', '2027-01-15') }],
   },
 ];
+
+// Row warnings: "Empty epic" and "Empty sprint" have no child items in GitLab ("noChildren"
+// from the backend); "Undated empty epic" also has no dates; "Finished epic" only has a closed
+// issue, hidden by default, and isn't flagged; "Busy epic" has an open issue.
+export const warningTree = [
+  { id: 'M1', name: '[Milestone] Empty sprint', type: 'milestone', noChildren: true, start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 48 },
+  { id: 'E1', name: 'Empty epic', type: 'epic', noChildren: true, start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 48 },
+  {
+    id: 'E2', name: 'Undated empty epic', type: 'epic', noChildren: true, noStartDate: true, noDueDate: true,
+    start: '2026-10-15', end: '2026-10-16', progress: 0, linearProgress: 50,
+  },
+  {
+    id: 'E3', name: 'Finished epic', type: 'epic', start: '2026-10-01', end: '2026-10-31', progress: 100, linearProgress: 48,
+    children: [{ id: 'I1', name: 'Done issue', type: 'issue', closed: true, start: '2026-10-01', end: '2026-10-10', progress: 100, linearProgress: 100 }],
+  },
+  {
+    id: 'E4', name: 'Busy epic', type: 'epic', health: 'atRisk', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 48,
+    children: [{ id: 'I2', name: 'Open issue', type: 'issue', start: '2026-10-01', end: '2026-10-10', progress: 0, linearProgress: 100 }],
+  },
+];

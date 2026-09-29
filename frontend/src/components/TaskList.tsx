@@ -1,7 +1,7 @@
 import React from 'react';
 import { Row } from '../utils/flatten';
-import { ChevronIcon, HealthBadge, WarningIcon } from './Icons';
-import { missingDatesMessage, scheduleLabel, scheduleStatus } from '../utils/schedule';
+import { ChevronIcon, HealthBadge, WarningFillIcon } from './Icons';
+import { missingDatesMessage, noChildrenMessage, rowWarnings, scheduleLabel, scheduleStatus } from '../utils/schedule';
 import { parseDay } from '../utils/timeline';
 import { HEALTH_LABELS, healthCountsMessage, healthMessage, rowHealth } from '../utils/health';
 import { overrun, overrunMessage } from '../utils/overrun';
@@ -16,11 +16,12 @@ export function formatDay(date: Date): string {
 }
 
 /** Schedule status of a group row (epic, milestone or any item with children), undefined
- * for leaves and for rows whose status means nothing (closed, dates made up). */
+ * for leaves and for rows whose status means nothing (closed, dates made up, no child items
+ * to take the progress from). */
 export function rowSchedule(row: Row) {
   const { node } = row;
   const isGroup = node.type === 'milestone' || row.hasChildren;
-  if (!isGroup || node.closed || missingDatesMessage(node)) return undefined;
+  if (!isGroup || node.closed || missingDatesMessage(node) || noChildrenMessage(node)) return undefined;
   return scheduleStatus(node.progress, node.linearProgress);
 }
 
@@ -34,6 +35,7 @@ export const TaskListRow: React.FC<{
   const { node, depth } = row;
   const isGroup = node.type === 'milestone' || row.hasChildren;
   const missingDates = missingDatesMessage(node);
+  const warnings = rowWarnings(node);
   const health = rowHealth(node);
   return (
     <div
@@ -44,6 +46,7 @@ export const TaskListRow: React.FC<{
       data-schedule={rowSchedule(row)}
       data-closed={node.closed ? 'true' : undefined}
       data-undated={missingDates ? 'true' : undefined}
+      data-empty={noChildrenMessage(node) ? 'true' : undefined}
       data-health={health}
     >
       <div className="task-list-cell" title={node.name}>
@@ -68,11 +71,12 @@ export const TaskListRow: React.FC<{
         <span className="task-type-dot" style={{ background: `var(--${node.type})` }} />
         <div className="task-list-name">{node.name}</div>
         {/* Trailing accessories, like a macOS / iOS table cell: aligned from row to row. */}
-        {(missingDates || health) && (
+        {(warnings.length > 0 || health) && (
           <span className="row-accessories">
-            {missingDates && (
-              <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
-                <WarningIcon size={13} />
+            {/* One triangle for every warning, one line each in its help tag. */}
+            {warnings.length > 0 && (
+              <span className="row-warning" role="img" aria-label={warnings.join('. ')} title={warnings.join('\n')}>
+                <WarningFillIcon />
               </span>
             )}
             {health && <HealthBadge level={health} label={healthMessage(node)} />}
@@ -90,6 +94,7 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
   const linear = node.linearProgress;
   // Without dates in GitLab, the dates shown are made up: no schedule status.
   const missingDates = missingDatesMessage(node);
+  const warnings = rowWarnings(node);
   const schedule = rowSchedule(row);
   const status = closed ? 'closed' : schedule;
   const past = overrun(node, row.parent);
@@ -106,12 +111,12 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
           <strong>Closed</strong>
         </p>
       )}
-      {missingDates && (
-        <p className="schedule missing-dates-note">
-          <WarningIcon size={12} />
-          <strong>{missingDates}</strong>
+      {warnings.map((warning) => (
+        <p key={warning} className="warning-note">
+          <WarningFillIcon size={12} />
+          <strong>{warning}</strong>
         </p>
-      )}
+      ))}
       {past && row.parent && (
         <p className="overrun-note">
           <strong>{overrunMessage(past, row.parent)}</strong>

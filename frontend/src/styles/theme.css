@@ -237,9 +237,10 @@ button { font: inherit; color: inherit; }
    table cell: pushed to the end of the row, so they line up from row to row */
 .task-list-name { min-width: 0; }
 .row-accessories { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding-left: 8px; }
-/* Rows without dates in GitLab: a warning sign, a gray dashed outline on the bar (whose
-   dates are made up), no schedule color */
-.missing-dates { flex: none; display: inline-flex; color: var(--warning); cursor: help; }
+/* Row warnings (dates missing in GitLab, epic or milestone without child items): one warning
+   sign, one line per warning in its help tag. Rows without dates also get a gray dashed
+   outline on the bar (whose dates are made up); neither gets a schedule color. */
+.row-warning { flex: none; display: inline-flex; color: var(--warning); cursor: help; }
 /* GitLab health status, SF Symbols style: red octagon (at risk), orange circle (needs
    attention), the same for the row's own status and for its descendants' */
 .health { flex: none; display: inline-flex; color: var(--health-needs-attention); cursor: help; }
@@ -272,8 +273,9 @@ button { font: inherit; color: inherit; }
 .gantt-tooltip[data-status='on-track'] .progress-value, .gantt-tooltip[data-status='on-track'] .progress-linear { background: var(--on-track); }
 .gantt-tooltip[data-status='at-risk'] .progress-value, .gantt-tooltip[data-status='at-risk'] .progress-linear { background: var(--at-risk); }
 .gantt-tooltip[data-undated] .progress-value { background: var(--undated); }
-.gantt-tooltip .missing-dates-note { display: flex; align-items: center; gap: 4px; color: var(--warning); }
-.gantt-tooltip .missing-dates-note strong { display: inline; margin: 0; font-size: inherit; color: inherit; }
+.gantt-tooltip .warning-note { display: flex; align-items: flex-start; gap: 4px; color: var(--warning); }
+.gantt-tooltip .warning-note svg { flex: none; margin-top: 2px; }
+.gantt-tooltip .warning-note strong { display: inline; margin: 0; font-size: inherit; color: inherit; }
 .gantt-tooltip .health-note { display: flex; align-items: center; gap: 4px; }
 .gantt-tooltip .health-note .health { cursor: inherit; }
 .gantt-tooltip .health-note strong { display: inline; margin: 0; font-size: inherit; }

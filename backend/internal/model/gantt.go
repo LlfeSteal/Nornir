@@ -23,9 +23,12 @@ type GanttTask struct {
 	Closed         bool    `json:"closed,omitempty"` // closed work item or milestone
 	// NoStartDate / NoDueDate: the date is missing in GitLab, Start / End are made up (see
 	// extractDates): the UI flags the row and doesn't judge its schedule.
-	NoStartDate bool    `json:"noStartDate,omitempty"`
-	NoDueDate   bool    `json:"noDueDate,omitempty"`
-	Labels      []Label `json:"labels,omitempty"`
+	NoStartDate bool `json:"noStartDate,omitempty"`
+	NoDueDate   bool `json:"noDueDate,omitempty"`
+	// NoChildren: an open epic or milestone without any child item in GitLab (closed ones
+	// included). Its progress comes from its children, so it can't be tracked.
+	NoChildren bool    `json:"noChildren,omitempty"`
+	Labels     []Label `json:"labels,omitempty"`
 	// Health is the item's own GitLab health status (HealthOnTrack, HealthNeedsAttention,
 	// HealthAtRisk), empty when unset. HealthBelow counts its open descendants that need
 	// attention or are at risk, each once; nil when there are none.

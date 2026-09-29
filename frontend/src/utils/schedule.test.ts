@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { missingDatesMessage, SCHEDULE_THRESHOLD, scheduleLabel, scheduleStatus } from './schedule';
+import { missingDatesMessage, noChildrenMessage, rowWarnings, SCHEDULE_THRESHOLD, scheduleLabel, scheduleStatus } from './schedule';
 
 describe('scheduleStatus', () => {
   it('is on track at or above the expected progress', () => {
@@ -33,5 +33,26 @@ describe('missingDatesMessage', () => {
     expect(missingDatesMessage({ noStartDate: true })).toBe('No start date in GitLab');
     expect(missingDatesMessage({ noDueDate: true })).toBe('No due date in GitLab');
     expect(missingDatesMessage({})).toBeUndefined();
+  });
+});
+
+describe('rowWarnings', () => {
+  const EPIC = "No child items: progress can't be tracked (stays at 0% until closed)";
+  const MILESTONE = "No items: progress can't be tracked (stays at 0%)";
+
+  it('warns about open epics and milestones without child items', () => {
+    expect(rowWarnings({ type: 'epic', noChildren: true })).toEqual([EPIC]);
+    expect(rowWarnings({ type: 'milestone', noChildren: true })).toEqual([MILESTONE]);
+  });
+
+  it('lists the missing dates first, then the missing children', () => {
+    expect(rowWarnings({ type: 'epic', noChildren: true, noStartDate: true, noDueDate: true })).toEqual(['No dates in GitLab', EPIC]);
+    expect(rowWarnings({ type: 'issue', noDueDate: true })).toEqual(['No due date in GitLab']);
+  });
+
+  it('says nothing for a closed item, an issue, or an item with children', () => {
+    expect(rowWarnings({ type: 'epic', noChildren: true, closed: true })).toEqual([]);
+    expect(noChildrenMessage({ type: 'issue', noChildren: true })).toBeUndefined();
+    expect(rowWarnings({ type: 'epic' })).toEqual([]);
   });
 });

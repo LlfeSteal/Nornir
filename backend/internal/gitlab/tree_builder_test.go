@@ -599,3 +599,45 @@ func TestHealthStatusIsCountedOnAncestors(t *testing.T) {
 		}
 	}
 }
+
+func TestEpicsAndMilestonesWithoutChildrenAreFlagged(t *testing.T) {
+	tree := mustBuild(t, []WorkItemNode{
+		node("parent", "Epic", "OPEN"),
+		node("empty", "Epic", "OPEN", parent("parent")),
+		node("closedEmpty", "Epic", "CLOSED"),
+		node("withClosedChild", "Epic", "OPEN"),
+		node("doneIssue", "Issue", "CLOSED", parent("withClosedChild"), milestoneTitled("m1", "Sprint 1")),
+		node("lonelyIssue", "Issue", "OPEN"),
+	}, []Milestone{{ID: "m1", Title: "Sprint 1"}, {ID: "m2", Title: "Empty"}, {ID: "m3", Title: "Old", State: "closed"}})
+
+	byID := map[string]model.GanttTask{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			byID[task.ID] = task
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+
+	want := map[string]bool{
+		"parent":           false,
+		"empty":            true,
+		"empty_root_empty": true, // every copy
+		"closedEmpty":      false,
+		"withClosedChild":  false, // a closed child counts
+		"lonelyIssue":      false, // issues are never flagged
+		"m1":               false,
+		"m2":               true,
+		"m3":               false, // closed
+	}
+	for id, w := range want {
+		task, ok := byID[id]
+		if !ok {
+			t.Fatalf("%s not found in tree %v", id, ids(tree))
+		}
+		if task.NoChildren != w {
+			t.Errorf("%s noChildren = %v, want %v", id, task.NoChildren, w)
+		}
+	}
+}

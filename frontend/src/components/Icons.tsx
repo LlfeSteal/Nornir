@@ -118,6 +118,19 @@ export const ChevronDownIcon = (props: IconProps) => (
   </Icon>
 );
 
+/** Filled warning sign, like SF Symbols' exclamationmark.triangle.fill: the row warnings,
+ * drawn like the health icons so the trailing accessories of a row match. */
+export const WarningFillIcon = ({ size = 15 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M10.3 3.6a2 2 0 0 1 3.4 0l8.1 14.1a2 2 0 0 1-1.7 3H3.9a2 2 0 0 1-1.7-3z"
+      fill="currentColor"
+    />
+    <path d="M12 9v4.6" stroke="#fff" strokeWidth={2.3} strokeLinecap="round" />
+    <circle cx="12" cy="17.2" r="1.3" fill="#fff" />
+  </svg>
+);
+
 /** Health status, like SF Symbols: exclamationmark.octagon.fill (at risk) and
  * exclamationmark.circle.fill (needs attention). The shape tells them apart without color;
  * the help tag says whether the status is the item's own or comes from below. */

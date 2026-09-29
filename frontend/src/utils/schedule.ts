@@ -26,6 +26,27 @@ export function scheduleLabel(progress: number, linear: number): string {
   return ahead >= 1 ? `On track · ${ahead}% ahead` : 'On track';
 }
 
+/** Why an open epic or milestone without child items can't be tracked: its progress comes
+ * from its children. */
+export function noChildrenMessage(row: { type: string; closed?: boolean; noChildren?: boolean }): string | undefined {
+  if (!row.noChildren || row.closed) return undefined;
+  if (row.type === 'milestone') return "No items: progress can't be tracked (stays at 0%)";
+  if (row.type === 'epic') return "No child items: progress can't be tracked (stays at 0% until closed)";
+  return undefined;
+}
+
+/** What the warning triangle of a row says, one message per line: missing dates, then no
+ * child items. Empty when there is nothing to warn about. */
+export function rowWarnings(row: {
+  type: string;
+  closed?: boolean;
+  noStartDate?: boolean;
+  noDueDate?: boolean;
+  noChildren?: boolean;
+}): string[] {
+  return [missingDatesMessage(row), noChildrenMessage(row)].filter((message): message is string => !!message);
+}
+
 /** Why a row's dates can't be trusted (made up by the backend), or undefined when GitLab
  * has both. Such rows get no schedule status. */
 export function missingDatesMessage(row: { noStartDate?: boolean; noDueDate?: boolean }): string | undefined {

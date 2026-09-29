@@ -176,6 +176,8 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		}
 		delete(visiting, id)
 		task.HealthBelow = below.OrNil()
+		// From the child lists, not task.Children: a child skipped by the cycle guard exists.
+		task.NoChildren = task.Type == model.TypeEpic && !item.closed && len(hierarchyChildren[id]) == 0
 
 		if len(task.Children) == 0 {
 			task.Progress = leafProgress(item.closed)
@@ -214,6 +216,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		}
 		ms.Progress = weightedProgress(weighted)
 		ms.HealthBelow = milestoneHealth(milestoneChildren[key], items, hierarchyChildren)
+		ms.NoChildren = !ms.Closed && len(milestoneChildren[key]) == 0
 		result = append(result, ms)
 	}
 	isRoot := make(map[string]bool, len(roots))
