@@ -689,6 +689,8 @@ test.describe('Gantt (mocked API)', () => {
       await expect(undated).toHaveCount(2); // the epic and the issue with a due date only
       expect(await barFill(page, 'Undated epic')).toBe('#aeaeb2');
       await expect(undated.first().locator('.bar-track')).toHaveCSS('outline-style', 'dashed');
+      // Gray: orange dashes mean "needs attention" (health status).
+      await expect(undated.first().locator('.bar-track')).toHaveCSS('outline-color', 'rgb(142, 142, 147)');
 
       // No expected-progress layer and no schedule color, unlike a dated epic that is late.
       await expect(undated.first().locator('.linear-progress')).toHaveCount(0);

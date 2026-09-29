@@ -81,3 +81,29 @@ export const periodTree = [
   },
   { id: 'E12', name: 'Future epic', type: 'epic', start: '2027-05-01', end: '2027-08-31', progress: 0, linearProgress: 0 },
 ];
+
+// GitLab health status, shaped like the backend output: "Webhooks" needs attention (under
+// Sprint 1 as a `_ms_` copy and under Payments), "Refund API" is at risk, "Old risk" is at
+// risk but closed (not counted). Payments is itself on track; Onboarding has nothing.
+export const healthTree = [
+  {
+    id: 'M1', name: '[Milestone] Sprint 1', type: 'milestone', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 45,
+    healthBelow: { atRisk: 0, needsAttention: 1 },
+    children: [
+      { id: 'I1_ms_I1', name: 'Webhooks', type: 'issue', health: 'needsAttention', start: '2026-10-05', end: '2026-10-20', progress: 0, linearProgress: 60 },
+    ],
+  },
+  {
+    id: 'E1', name: 'Payments', type: 'epic', health: 'onTrack', start: '2026-10-01', end: '2026-11-30', progress: 30, linearProgress: 20,
+    healthBelow: { atRisk: 1, needsAttention: 1 },
+    children: [
+      { id: 'I1', name: 'Webhooks', type: 'issue', health: 'needsAttention', start: '2026-10-05', end: '2026-10-20', progress: 0, linearProgress: 60 },
+      { id: 'I2', name: 'Refund API', type: 'issue', health: 'atRisk', start: '2026-10-10', end: '2026-11-10', progress: 0, linearProgress: 15 },
+      { id: 'I3', name: 'Old risk', type: 'issue', health: 'atRisk', closed: true, start: '2026-10-01', end: '2026-10-05', progress: 100, linearProgress: 100 },
+    ],
+  },
+  {
+    id: 'E3', name: 'Onboarding', type: 'epic', start: '2026-10-01', end: '2026-12-31', progress: 0, linearProgress: 15,
+    children: [{ id: 'I5', name: 'Logs', type: 'issue', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 45 }],
+  },
+];

@@ -36,7 +36,12 @@
   --closed-bg: rgba(142, 142, 147, 0.18); /* systemGray, hatched */
   --closed-stroke: rgba(142, 142, 147, 0.45);
   --undated: #aeaeb2; /* systemGray2: bars without dates in GitLab */
+  --undated-stroke: #8e8e93; /* systemGray: their dashed outline (orange dashes mean "needs attention") */
   --warning: var(--orange);
+  /* GitLab health status, shown as a glyph (never as the bar color, which is the schedule) */
+  --health-needs-attention: var(--orange);
+  --health-at-risk: var(--red);
+  --health-on-track: var(--green);
   --milestone-band: rgba(175, 82, 222, 0.1);
   --epic-band: rgba(0, 122, 255, 0.1);
   --issue-band: rgba(48, 176, 199, 0.1);
@@ -74,6 +79,7 @@
   --closed-bg: rgba(142, 142, 147, 0.22);
   --closed-stroke: rgba(142, 142, 147, 0.5);
   --undated: #636366;
+  --undated-stroke: #98989d;
   --milestone-band: rgba(191, 90, 242, 0.16);
   --epic-band: rgba(10, 132, 255, 0.16);
   --issue-band: rgba(64, 200, 224, 0.16);
@@ -163,7 +169,10 @@ button { font: inherit; color: inherit; }
 .legend-swatch { width: 18px; height: 8px; border-radius: 3px; background: var(--text-secondary); }
 .legend-swatch.linear { opacity: 0.55; }
 .legend-swatch.track { opacity: 0.3; }
-.legend-swatch.undated { background: color-mix(in srgb, var(--undated) 35%, transparent); outline: 1.5px dashed var(--warning); outline-offset: -1.5px; }
+.legend-swatch.undated { background: color-mix(in srgb, var(--undated) 35%, transparent); outline: 1.5px dashed var(--undated-stroke); outline-offset: -1.5px; }
+.legend-swatch.health-outline { background: var(--fill); outline: 1.5px dashed var(--health-needs-attention); outline-offset: 1px; }
+.legend-swatch.health-outline[data-level='atRisk'] { outline-color: var(--health-at-risk); }
+.legend-item .health { margin-left: 0; cursor: inherit; }
 .legend-swatch.closed { background: repeating-linear-gradient(45deg, var(--closed-bg) 0 2px, var(--closed-stroke) 2px 4px); }
 
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
@@ -227,6 +236,16 @@ button { font: inherit; color: inherit; }
 /* Rows without dates in GitLab: a warning sign after the name, an orange dashed outline on
    the bar (whose dates are made up), no schedule color */
 .missing-dates { flex: none; display: inline-flex; margin-left: 6px; color: var(--warning); cursor: help; }
+/* GitLab health status: "!" needs attention, "!!" at risk, like the priorities of Reminders.
+   Filled for the row's own status, hollow when it comes from its descendants. */
+.health {
+  flex: none; display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 3px;
+  border-radius: 8px; font-size: 10px; font-weight: 800; line-height: 1; letter-spacing: -0.5px; cursor: help;
+  --health: var(--health-needs-attention);
+  color: var(--health); background: var(--card); box-shadow: inset 0 0 0 1.5px var(--health);
+}
+.health[data-level='atRisk'] { --health: var(--health-at-risk); }
+.health[data-own] { color: #fff; background: var(--health); box-shadow: none; }
 .task-list-row[data-closed] .task-type-dot { background: var(--text-tertiary) !important; }
 
 /* Tree connectors, drawn in CSS so they join from row to row */
@@ -257,6 +276,9 @@ button { font: inherit; color: inherit; }
 .gantt-tooltip[data-undated] .progress-value { background: var(--undated); }
 .gantt-tooltip .missing-dates-note { display: flex; align-items: center; gap: 4px; color: var(--warning); }
 .gantt-tooltip .missing-dates-note strong { display: inline; margin: 0; font-size: inherit; color: inherit; }
+.gantt-tooltip .health-note strong { display: inline; margin: 0; font-size: inherit; }
+.gantt-tooltip .health-note[data-health='needsAttention'] strong { color: var(--health-needs-attention); }
+.gantt-tooltip .health-note[data-health='atRisk'] strong { color: var(--health-at-risk); }
 .gantt-tooltip[data-status='closed'] .progress-value { background: var(--text-tertiary); }
 .gantt-tooltip .schedule[data-status='closed'] strong { color: var(--text-secondary); }
 .gantt-tooltip[data-status='late'] .progress-value, .gantt-tooltip[data-status='late'] .progress-linear { background: var(--late); }
@@ -361,12 +383,19 @@ button { font: inherit; color: inherit; }
   opacity: 1; background: repeating-linear-gradient(45deg, var(--closed-bg) 0 3px, var(--closed-stroke) 3px 5px);
 }
 .bar[data-closed] .bar-label { color: var(--text-secondary); font-weight: 500; }
-/* Rows without dates in GitLab: gray, with an orange dashed outline */
+/* Rows without dates in GitLab: gray, with a gray dashed outline inside */
 .bar[data-undated] .bar-track {
   opacity: 1; background-color: color-mix(in srgb, var(--undated) 35%, transparent);
-  outline: 1.5px dashed var(--warning); outline-offset: -1.5px;
+  outline: 1.5px dashed var(--undated-stroke); outline-offset: -1.5px;
 }
+/* Health status: a dashed outline just outside the bar, orange (needs attention) or red (at
+   risk), for its own status or one of its open descendants' */
+.bar[data-health] { outline: 1.5px dashed var(--health-needs-attention); outline-offset: 1.5px; }
+.bar[data-health='atRisk'] { outline-color: var(--health-at-risk); }
 .bar[data-undated]:not([data-group]) .bar-label.inside { color: var(--text); }
+/* The health glyph before the label, outlined with the card color to stand out on the bar */
+.bar-label .health { margin: 0 5px 0 0; cursor: inherit; }
+.bar-label .health[data-own] { box-shadow: 0 0 0 1.5px var(--card); }
 
 /* The tooltip floats above everything, next to the hovered bar */
 .gantt-tooltip-anchor { position: fixed; z-index: 30; width: max-content; max-width: 320px; pointer-events: none; }

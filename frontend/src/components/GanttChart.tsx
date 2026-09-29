@@ -15,6 +15,8 @@ import {
 } from '../utils/timeline';
 import { clipBar, DateRange } from '../utils/period';
 import { missingDatesMessage } from '../utils/schedule';
+import { healthMessage, rowHealth } from '../utils/health';
+import { HealthBadge } from './Icons';
 
 // The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
 // calendar columns) on screen are rendered: one native scroll container moves everything,
@@ -305,7 +307,8 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
   const width = Math.max(2, timeline.x(bar.end) - left);
   const isGroup = node.type === 'milestone' || row.hasChildren;
   const schedule = rowSchedule(row);
-  const labelInside = node.name.length * LABEL_CHAR_WIDTH + 16 < width;
+  const health = rowHealth(node);
+  const labelInside = node.name.length * LABEL_CHAR_WIDTH + (health ? 20 : 0) + 16 < width;
   return (
     <div
       className="bar"
@@ -315,6 +318,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       data-closed={node.closed ? 'true' : undefined}
       data-undated={missingDatesMessage(node) ? 'true' : undefined}
       data-nested={row.depth > 0 ? 'true' : undefined}
+      data-health={health?.level}
       style={{ left, width }}
       onMouseEnter={(event) => onHover(row, event)}
       onMouseLeave={onLeave}
@@ -326,13 +330,16 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
         <div className="linear-progress" style={{ width: `${Math.min(100, bar.linearProgress)}%` }} />
       )}
       {!node.closed && <div className="bar-progress" style={{ width: `${bar.progress}%` }} />}
-      <span className={labelInside ? 'bar-label inside' : 'bar-label'}>{node.name}</span>
+      <span className={labelInside ? 'bar-label inside' : 'bar-label'}>
+        {health && <HealthBadge level={health.level} own={health.own} label={healthMessage(node)} />}
+        {node.name}
+      </span>
     </div>
   );
 }
 
 const TOOLTIP_WIDTH = 260;
-const TOOLTIP_HEIGHT = 150;
+const TOOLTIP_HEIGHT = 190;
 
 function Tooltip({ hover }: { hover: Hover }) {
   const left = Math.max(8, Math.min(hover.x - 20, window.innerWidth - TOOLTIP_WIDTH - 8));

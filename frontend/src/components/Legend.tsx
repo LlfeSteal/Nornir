@@ -1,4 +1,5 @@
 import React from 'react';
+import { HealthBadge } from './Icons';
 
 const TYPES = [
   { label: 'Milestone', color: 'var(--milestone)' },
@@ -7,6 +8,12 @@ const TYPES = [
 ];
 
 // Colors of epic and milestone bars, see utils/schedule.ts.
+// GitLab health status: a glyph in the list and a dashed outline around the bar, see utils/health.ts.
+const HEALTH = [
+  { label: 'At risk', level: 'atRisk' },
+  { label: 'Needs attention', level: 'needsAttention' },
+] as const;
+
 const STATUSES = [
   { label: 'On track', color: 'var(--on-track)' },
   { label: 'Up to 5% behind', color: 'var(--at-risk)' },
@@ -27,6 +34,15 @@ export const Legend: React.FC = () => (
       {STATUSES.map((item) => (
         <span key={item.label} className="legend-item">
           <span className="legend-dot" style={{ background: item.color }} />
+          {item.label}
+        </span>
+      ))}
+    </span>
+    <span className="legend-group">
+      {HEALTH.map((item) => (
+        <span key={item.level} className="legend-item legend-health">
+          <HealthBadge level={item.level} own />
+          <span className="legend-swatch health-outline" data-level={item.level} />
           {item.label}
         </span>
       ))}

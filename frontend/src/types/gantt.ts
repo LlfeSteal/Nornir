@@ -1,5 +1,14 @@
 export type GanttTaskType = 'milestone' | 'epic' | 'issue';
 
+/** GitLab health status of a work item. */
+export type HealthStatus = 'onTrack' | 'needsAttention' | 'atRisk';
+
+/** Open descendants of a row, by health status (each counted once). */
+export interface HealthCounts {
+  atRisk: number;
+  needsAttention: number;
+}
+
 export interface Label {
   title: string;
   color: string;           // Hex color from GitLab, e.g. "#428bca"
@@ -18,5 +27,7 @@ export interface GanttTask {
   noStartDate?: boolean;   // No start date in GitLab: `start` is made up
   noDueDate?: boolean;     // No due date in GitLab: `end` is made up
   labels?: Label[];
+  health?: HealthStatus;   // Own GitLab health status
+  healthBelow?: HealthCounts; // Open descendants at risk / needing attention, when any
   children?: GanttTask[];  // Recursive children
 }

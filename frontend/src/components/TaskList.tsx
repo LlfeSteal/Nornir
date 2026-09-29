@@ -1,8 +1,9 @@
 import React from 'react';
 import { Row } from '../utils/flatten';
-import { ChevronIcon, WarningIcon } from './Icons';
+import { ChevronIcon, HealthBadge, WarningIcon } from './Icons';
 import { missingDatesMessage, scheduleLabel, scheduleStatus } from '../utils/schedule';
 import { parseDay } from '../utils/timeline';
+import { HEALTH_LABELS, healthCountsMessage, healthMessage, rowHealth } from '../utils/health';
 
 // The list side of a chart row (only the item's name, the dates are in the tooltip) and the
 // tooltip shown on a bar.
@@ -32,6 +33,7 @@ export const TaskListRow: React.FC<{
   const { node, depth } = row;
   const isGroup = node.type === 'milestone' || row.hasChildren;
   const missingDates = missingDatesMessage(node);
+  const health = rowHealth(node);
   return (
     <div
       className="task-list-row"
@@ -41,6 +43,7 @@ export const TaskListRow: React.FC<{
       data-schedule={rowSchedule(row)}
       data-closed={node.closed ? 'true' : undefined}
       data-undated={missingDates ? 'true' : undefined}
+      data-health={health?.level}
     >
       <div className="task-list-cell" title={node.name}>
         {row.guides.map((line, level) => (
@@ -63,6 +66,7 @@ export const TaskListRow: React.FC<{
         )}
         <span className="task-type-dot" style={{ background: `var(--${node.type})` }} />
         <div className="task-list-name">{node.name}</div>
+        {health && <HealthBadge level={health.level} own={health.own} label={healthMessage(node)} />}
         {missingDates && (
           <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
             <WarningIcon size={13} />
@@ -99,6 +103,16 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
         <p className="schedule missing-dates-note">
           <WarningIcon size={12} />
           <strong>{missingDates}</strong>
+        </p>
+      )}
+      {node.health && (
+        <p className="health-note" data-health={node.health}>
+          Health: <strong>{HEALTH_LABELS[node.health]}</strong>
+        </p>
+      )}
+      {node.healthBelow && (
+        <p className="health-note" data-health={node.healthBelow.atRisk ? 'atRisk' : 'needsAttention'}>
+          Below: <strong>{healthCountsMessage(node.healthBelow)}</strong>
         </p>
       )}
       {schedule && (
