@@ -318,7 +318,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       data-closed={node.closed ? 'true' : undefined}
       data-undated={missingDatesMessage(node) ? 'true' : undefined}
       data-nested={row.depth > 0 ? 'true' : undefined}
-      data-health={health?.level}
+      data-health={health}
       style={{ left, width }}
       onMouseEnter={(event) => onHover(row, event)}
       onMouseLeave={onLeave}
@@ -331,7 +331,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       )}
       {!node.closed && <div className="bar-progress" style={{ width: `${bar.progress}%` }} />}
       <span className={labelInside ? 'bar-label inside' : 'bar-label'}>
-        {health && <HealthBadge level={health.level} own={health.own} label={healthMessage(node)} />}
+        {health && <HealthBadge level={health} label={healthMessage(node)} />}
         {node.name}
       </span>
     </div>

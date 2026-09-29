@@ -43,7 +43,7 @@ export const TaskListRow: React.FC<{
       data-schedule={rowSchedule(row)}
       data-closed={node.closed ? 'true' : undefined}
       data-undated={missingDates ? 'true' : undefined}
-      data-health={health?.level}
+      data-health={health}
     >
       <div className="task-list-cell" title={node.name}>
         {row.guides.map((line, level) => (
@@ -66,7 +66,7 @@ export const TaskListRow: React.FC<{
         )}
         <span className="task-type-dot" style={{ background: `var(--${node.type})` }} />
         <div className="task-list-name">{node.name}</div>
-        {health && <HealthBadge level={health.level} own={health.own} label={healthMessage(node)} />}
+        {health && <HealthBadge level={health} label={healthMessage(node)} />}
         {missingDates && (
           <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
             <WarningIcon size={13} />

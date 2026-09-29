@@ -119,12 +119,11 @@ export const ChevronDownIcon = (props: IconProps) => (
 );
 
 /** Health flag, like the priority marks of Reminders: "!" needs attention, "!!" at risk.
- * Filled for the row's own status, hollow when it comes from its descendants. */
-export const HealthBadge: React.FC<{ level: 'atRisk' | 'needsAttention'; own: boolean; label?: string }> = ({ level, own, label }) => (
+ * The same glyph everywhere; its help tag says whether it comes from the item or below. */
+export const HealthBadge: React.FC<{ level: 'atRisk' | 'needsAttention'; label?: string }> = ({ level, label }) => (
   <span
     className="health"
     data-level={level}
-    data-own={own ? 'true' : undefined}
     // Without a label (e.g. in the legend, next to its text), the glyph is decorative.
     {...(label ? { role: 'img', 'aria-label': label, title: label } : { 'aria-hidden': true })}
   >

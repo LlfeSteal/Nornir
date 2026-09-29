@@ -41,7 +41,7 @@ export const Legend: React.FC = () => (
     <span className="legend-group">
       {HEALTH.map((item) => (
         <span key={item.level} className="legend-item legend-health">
-          <HealthBadge level={item.level} own />
+          <HealthBadge level={item.level} />
           <span className="legend-swatch health-outline" data-level={item.level} />
           {item.label}
         </span>

@@ -12,15 +12,12 @@ export const HEALTH_LABELS: Record<HealthStatus, string> = {
   onTrack: 'On track',
 };
 
-/** The flag of a row, undefined when it has none (closed rows aren't flagged). `own` is set
- * when the row's own status is the worst one: the glyph is filled, otherwise hollow. */
-export function rowHealth(node: GanttTask): { level: HealthLevel; own: boolean } | undefined {
+/** The flag of a row, from its own status or its descendants', undefined when it has none
+ * (closed rows aren't flagged). */
+export function rowHealth(node: GanttTask): HealthLevel | undefined {
   if (node.closed) return undefined;
-  const below = node.healthBelow;
-  if (node.health === 'atRisk') return { level: 'atRisk', own: true };
-  if (below?.atRisk) return { level: 'atRisk', own: false };
-  if (node.health === 'needsAttention') return { level: 'needsAttention', own: true };
-  if (below?.needsAttention) return { level: 'needsAttention', own: false };
+  if (node.health === 'atRisk' || node.healthBelow?.atRisk) return 'atRisk';
+  if (node.health === 'needsAttention' || node.healthBelow?.needsAttention) return 'needsAttention';
   return undefined;
 }
 

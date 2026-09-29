@@ -2,8 +2,7 @@ import { expect, Page, test } from '@playwright/test';
 import { healthTree, mockApi } from './fixtures';
 
 // GitLab health status: a "!" (needs attention) or "!!" (at risk) glyph after the name and
-// before the bar label, filled for the row's own status, hollow when it comes from its open
-// descendants; the counts in the help tag and the tooltip; the Health filter.
+// before the bar label, the same for the row's own status and for its open descendants'; the counts in the help tag and the tooltip; the Health filter.
 
 const RED = '#ff3b30'; // systemRed, light appearance
 const ORANGE = '#ff9500'; // systemOrange
@@ -16,13 +15,12 @@ function toHex(color: string) {
 /** The list row named `name`. */
 const listRow = (page: Page, name: string) => page.locator('.task-list-row', { has: page.getByTitle(name, { exact: true }) });
 
-/** The health glyph of a list row: its text, whether it is filled, and its colors. */
+/** The health glyph of a list row: its text and its colors. */
 async function glyph(page: Page, name: string) {
   const badge = listRow(page, name).locator('.health');
   await expect(badge).toBeVisible();
   return badge.evaluate((el) => ({
     text: el.textContent,
-    own: el.hasAttribute('data-own'),
     color: getComputedStyle(el).color,
     background: getComputedStyle(el).backgroundColor,
     label: el.getAttribute('aria-label'),
@@ -51,33 +49,34 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page, { body: healthTree });
 });
 
-test('flags the rows at risk or needing attention, hollow when it comes from below', async ({ page }) => {
+test('flags the rows at risk or needing attention, the same glyph whether it comes from the row or below', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByTitle('Payments')).toBeVisible();
 
-  // Payments is on track itself, but holds an issue at risk: hollow red "!!".
-  let payments = await glyph(page, 'Payments');
-  expect(payments).toMatchObject({ text: '!!', own: false, label: '1 at risk · 1 needs attention below' });
-  expect(toHex(payments.color)).toBe(RED);
+  // Payments is on track itself, but holds an issue at risk: red "!!", like the issue's own.
+  const payments = await glyph(page, 'Payments');
+  expect(payments).toMatchObject({ text: '!!', label: '1 at risk · 1 needs attention below' });
+  expect(toHex(payments.background)).toBe(RED);
+  expect(toHex(payments.color)).toBe('#ffffff');
   await expect(listRow(page, 'Payments')).toHaveAttribute('data-health', 'atRisk');
 
-  // The milestone only holds an issue needing attention: hollow orange "!".
+  // The milestone only holds an issue needing attention: orange "!".
   const sprint = await glyph(page, '[Milestone] Sprint 1');
-  expect(sprint).toMatchObject({ text: '!', own: false, label: '1 needs attention below' });
-  expect(toHex(sprint.color)).toBe(ORANGE);
+  expect(sprint).toMatchObject({ text: '!', label: '1 needs attention below' });
+  expect(toHex(sprint.background)).toBe(ORANGE);
 
   // Nothing on a row without health status below it.
   await expect(listRow(page, 'Onboarding')).toBeVisible();
   await expect(listRow(page, 'Onboarding').locator('.health')).toHaveCount(0);
 
-  // The issues' own status: filled glyphs.
+  // The issues' own status: the same glyphs.
   await expandRow(page, 'Payments');
   const refund = await glyph(page, 'Refund API');
-  expect(refund).toMatchObject({ text: '!!', own: true, label: 'At risk' });
+  expect(refund).toMatchObject({ text: '!!', label: 'At risk' });
   expect(toHex(refund.background)).toBe(RED);
   expect(toHex(refund.color)).toBe('#ffffff');
   const webhooks = await glyph(page, 'Webhooks');
-  expect(webhooks).toMatchObject({ text: '!', own: true, label: 'Needs attention' });
+  expect(webhooks).toMatchObject({ text: '!', label: 'Needs attention' });
   expect(toHex(webhooks.background)).toBe(ORANGE);
 
   // A dashed outline around the bars: red at risk, orange needs attention, own or from below.
@@ -96,10 +95,10 @@ test('flags the rows at risk or needing attention, hollow when it comes from bel
   // The bars carry the same glyph before their label; their color stays the schedule's.
   const refundBar = page.locator('.bar', { has: page.locator('.bar-label', { hasText: 'Refund API' }) });
   await expect(refundBar).toHaveAttribute('data-health', 'atRisk');
-  await expect(refundBar.locator('.bar-label .health[data-own]')).toHaveText('!!');
+  await expect(refundBar.locator('.bar-label .health')).toHaveText('!!');
   const paymentsBar = page.locator('.bar', { has: page.locator('.bar-label', { hasText: 'Payments' }) });
   await expect(paymentsBar).toHaveAttribute('data-schedule', 'on-track');
-  await expect(paymentsBar.locator('.bar-label .health:not([data-own])')).toHaveText('!!');
+  await expect(paymentsBar.locator('.bar-label .health')).toHaveText('!!');
 });
 
 test('the tooltip shows the own status and the counts below', async ({ page }) => {
@@ -145,8 +144,8 @@ test('the glyphs follow the dark appearance', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('/');
   const payments = await glyph(page, 'Payments');
-  expect(toHex(payments.color)).toBe(DARK_RED);
-  expect(toHex(payments.background)).toBe('#1c1c1e'); // --card
+  expect(toHex(payments.background)).toBe(DARK_RED);
+  expect(toHex(payments.color)).toBe('#ffffff');
   expect(await outline(bar(page, 'Payments'))).toEqual({ style: 'dashed', color: DARK_RED });
 });
 
