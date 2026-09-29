@@ -6,7 +6,7 @@ Reference for any agent (or human) working in this repository. Read it fully bef
 
 **Nornir** shows the Gantt chart of **one** GitLab group: its epics, milestones and issues/tasks (including those of the group's projects).
 
-- **Backend**: Go 1.21+ / Gin. Queries the GitLab GraphQL API, builds a tree, caches it in memory for 5 min (go-cache).
+- **Backend**: Go 1.21+ / Gin. Queries the GitLab GraphQL API, builds a tree, keeps it encoded in an in-memory cache (`internal/cache`, see Backend API).
 - **Frontend**: React 18 + TypeScript + Vite, rendered with `gantt-task-react`, HTTP via axios.
 - **Deployment**: `docker compose` — Go backend (alpine image) + nginx serving the SPA and proxying `/api/` to the backend.
 
@@ -14,7 +14,9 @@ Reference for any agent (or human) working in this repository. Read it fully bef
 
 ```
 backend/
-  cmd/server/main.go                config (env), Gin routes, cache, /api/gantt handler
+  cmd/server/main.go                config (env), Gin routes, /api/gantt and /api/labels handlers, cache warm-up
+  cmd/server/main_test.go           handlers against a fake GitLab
+  internal/cache/cache.go           response cache: one fetch at a time per key, stale-while-revalidate
   internal/gitlab/client.go         paginated GraphQL queries (work items, milestones), error handling
   internal/gitlab/structs.go        GraphQL deserialization structs
   internal/gitlab/tree_builder.go   tree-building algorithm (core business logic)
@@ -74,8 +76,10 @@ docker compose down
 
 - `GET /api/health` → `{"status":"ok"}`
 - `GET /api/config` → `{"group", "gitlabUrl"}` (never the token)
-- `GET /api/gantt` → `GanttTask[]` tree of the configured group. `?refresh=1` bypasses the cache. Header `X-Cache: HIT|MISS`. Errors: 401 (token), 404 (group not found), 502 (other GitLab error), body `{"error": "..."}`. Every work item row carries its `labels` (`[{title, color}]`), on every copy; `noStartDate` / `noDueDate` are set on rows whose date is missing in GitLab.
-- `GET /api/labels` → `[{title, color}]`: labels of the group and of its ancestors (`includeAncestorGroups`), sorted by title. Same `refresh`, `X-Cache`, errors and token-fingerprinted cache as `/api/gantt`. Separate on purpose: a large hierarchy has thousands of labels (4,205 for `gitlab-org`, 43 pages, ~27 s), so the frontend never waits for it. Project labels aren't in it: the frontend adds the labels found on the items.
+- `GET /api/gantt` → `GanttTask[]` tree of the configured group. `?refresh=1` waits for fresh data. Headers `X-Cache: HIT|STALE|MISS` and `X-Fetched-At` (RFC 3339, when the data was fetched from GitLab: the toolbar's "Updated at"). Errors: 401 (token), 404 (group not found), 502 (other GitLab error), body `{"error": "..."}`. Every work item row carries its `labels` (`[{title, color}]`), on every copy; `noStartDate` / `noDueDate` are set on rows whose date is missing in GitLab.
+- `GET /api/labels` → `[{title, color}]`: labels of the group and of its ancestors (`includeAncestorGroups`), sorted by title. Same `refresh`, headers, errors and token-fingerprinted cache as `/api/gantt`. Separate on purpose: a large hierarchy has thousands of labels (4,205 for `gitlab-org`, 43 pages, ~27 s), so the frontend never waits for it. Project labels aren't in it: the frontend adds the labels found on the items.
+
+- **Cache** (`internal/cache`, used by both endpoints through `serveCached`): responses are cached **encoded** (JSON bytes, marshaled once). Up to 5 min old → `HIT`; up to 24 h → served at once as `STALE` while a background fetch refreshes them; older → dropped. Requests for a key share **a single fetch** (no pile-up of full GitLab walks when many users refresh), and the fetch runs on its own context (10 min timeout), **not the request's**: a closed tab or a proxy timeout doesn't waste it, its result is cached. Errors are not cached. At startup, with `GITLAB_TOKEN` set, `main` prefetches both keys. Work items and milestones are fetched in parallel. Each gantt fetch logs its item/row counts, JSON size and duration.
 
 ## GitLab GraphQL pitfalls (learned the hard way)
 
@@ -106,7 +110,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 
 ## Security
 
-- The cache key includes a token fingerprint (`tokenFingerprint` in `main.go`). **Never key the cache on the group alone**: a tree fetched with one user's permissions would be served to another.
+- The cache key includes a token fingerprint (`tokenFingerprint`, `ganttKey` / `labelsKey` in `main.go`). **Never key the cache on the group alone**: a tree fetched with one user's permissions would be served to another.
 
 ## Frontend
 
@@ -140,7 +144,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 
 ## Tests
 
-- **Go**: unit tests in `backend/internal/gitlab` (`buildGanttTree` takes an injected `now` to stay deterministic).
+- **Go**: unit tests in `backend/internal/gitlab` (`buildGanttTree` takes an injected `now` to stay deterministic), `internal/cache` (shared fetch, stale data, cancelled requests; run with `-race`) and `cmd/server` (handlers against an `httptest` fake GitLab).
 - **Playwright**: in `frontend/e2e/` — **every new Playwright test is saved in the project**, never thrown away.
   - `*.mocked.spec.ts`: API mocked with `page.route`, datasets in `e2e/fixtures.ts` (`mockApi`, with an optional `delayMs`).
   - The default period is **This year**, relative to the real clock: `gantt.mocked.spec.ts` and the `@live` tests store `nornir.period = all` in a `beforeEach` (`page.addInitScript`) so they don't depend on the date. `period.mocked.spec.ts` tests the period with a fixed clock and the `periodTree` dataset. Selectors: buttons **Previous period** / **Next period**, the menu button named `Period: <label>` (`2026`, `Q4 2026`, `2025 – 2027`, `All dates`) and its `menuitemradio`s.

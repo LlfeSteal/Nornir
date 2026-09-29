@@ -2,7 +2,7 @@
 
 Gantt chart of a GitLab group: the epics, milestones and issues of the group and its projects, with their hierarchy. An item attached to both an epic and a milestone shows up under both.
 
-- Go backend (Gin) querying the GitLab GraphQL API, with a 5-minute cache.
+- Go backend (Gin) querying the GitLab GraphQL API, with an in-memory cache (see [Large groups](#large-groups)).
 - React + Vite frontend (`gantt-task-react`), served by nginx.
 
 ## Prerequisites
@@ -57,8 +57,14 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 - Epic and milestone bars have three layers: the planned period (transparent), the **expected** progress if the work advanced evenly between their start and end dates (semi-transparent), and the **real** progress (solid). When the solid part is shorter than the semi-transparent one, the item is behind schedule; the tooltip says by how much ("Expected 80% · 30% behind").
 - Progress is computed level by level: an item is at the mean of its direct children's progress, each weighted by its GitLab `weight` (1 point when it has none); a closed issue is at 100%. For example, 2 issues of 5 points with one closed → 50%; a capability with 3 unweighted features at 50%, 0% and 0% → 16.67%.
 - Double-click a bar to open the item in GitLab.
-- **Refresh** reloads from GitLab without waiting for the cache to expire.
+- **Refresh** reloads from GitLab without waiting for the cache to expire (on a large group, this takes as long as a first load; the chart stays usable meanwhile).
 - Items without dates in GitLab are shown on today only, just so they appear: a warning sign next to their name (hover it: "No dates in GitLab"), a gray bar with an orange dashed outline, and no schedule color (their dates are made up). With only one date, the bar spans 14 days from it and the warning says which date is missing.
+
+## Large groups
+
+Nornir is made for groups with thousands of milestones, epics and issues:
+
+- **Cache.** Walking a large group takes GitLab many pages (100 items each), so the backend keeps the result in memory. Data less than 5 minutes old is served as is; older data (up to a day) is served **at once** while the backend fetches it again in the background, so the next visit is up to date. When `GITLAB_TOKEN` is set, the backend fills the cache when it starts, so the first visitor doesn't wait either. However many people open or refresh the chart, the backend fetches from GitLab **once at a time**, and a fetch goes on even when the page that started it is closed. Its log says how long each fetch took and how many items it found.
 
 ## Tests
 
