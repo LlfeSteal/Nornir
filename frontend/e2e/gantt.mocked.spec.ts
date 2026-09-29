@@ -676,12 +676,16 @@ test.describe('Gantt (mocked API)', () => {
 
     const row = (page: Page, name: string) => page.locator('.task-list-row', { has: page.getByTitle(name, { exact: true }) });
 
-    test('a warning sign next to the name says the dates are missing', async ({ page }) => {
+    test('a warning sign at the end of the row says the dates are missing', async ({ page }) => {
       const warning = row(page, 'Undated epic').getByRole('img', { name: 'No dates in GitLab' });
       await expect(warning).toBeVisible();
       await expect(warning).toHaveAttribute('title', 'No dates in GitLab');
-      await expect(row(page, 'Due date only').getByRole('img', { name: 'No start date in GitLab' })).toBeVisible();
+      const other = row(page, 'Due date only').getByRole('img', { name: 'No start date in GitLab' });
+      await expect(other).toBeVisible();
       await expect(row(page, 'Dated epic').getByRole('img')).toHaveCount(0);
+      // Trailing accessories: aligned from row to row, whatever the name's length.
+      const right = async (locator: typeof warning) => (await locator.boundingBox())!.x + (await locator.boundingBox())!.width;
+      expect(await right(warning)).toBeCloseTo(await right(other), 0);
     });
 
     test('the bar is gray with a dashed outline and no schedule', async ({ page }) => {

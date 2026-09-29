@@ -15,9 +15,8 @@ import {
 } from '../utils/timeline';
 import { clipBar, DateRange } from '../utils/period';
 import { missingDatesMessage } from '../utils/schedule';
-import { healthMessage, rowHealth } from '../utils/health';
+import { rowHealth } from '../utils/health';
 import { overrun } from '../utils/overrun';
-import { HealthBadge } from './Icons';
 
 // The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
 // calendar columns) on screen are rendered: one native scroll container moves everything,
@@ -309,7 +308,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
   const isGroup = node.type === 'milestone' || row.hasChildren;
   const schedule = rowSchedule(row);
   const health = rowHealth(node);
-  const labelInside = node.name.length * LABEL_CHAR_WIDTH + (health ? 20 : 0) + 16 < width;
+  const labelInside = node.name.length * LABEL_CHAR_WIDTH + 16 < width;
   // The part planned past the parent's end, cut like the bar at the period's edges.
   const past = overrun(node, row.parent);
   const pastFrom = past ? timeline.x(past.from > bar.start ? past.from : bar.start) : 0;
@@ -337,10 +336,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       )}
       {!node.closed && <div className="bar-progress" style={{ width: `${bar.progress}%` }} />}
       {pastWidth > 0 && <div className="bar-overrun" style={{ left: pastFrom - left, width: pastWidth }} />}
-      <span className={labelInside ? 'bar-label inside' : 'bar-label'}>
-        {health && <HealthBadge level={health} label={healthMessage(node)} />}
-        {node.name}
-      </span>
+      <span className={labelInside ? 'bar-label inside' : 'bar-label'}>{node.name}</span>
     </div>
   );
 }

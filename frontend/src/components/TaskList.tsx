@@ -67,10 +67,15 @@ export const TaskListRow: React.FC<{
         )}
         <span className="task-type-dot" style={{ background: `var(--${node.type})` }} />
         <div className="task-list-name">{node.name}</div>
-        {health && <HealthBadge level={health} label={healthMessage(node)} />}
-        {missingDates && (
-          <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
-            <WarningIcon size={13} />
+        {/* Trailing accessories, like a macOS / iOS table cell: aligned from row to row. */}
+        {(missingDates || health) && (
+          <span className="row-accessories">
+            {missingDates && (
+              <span className="missing-dates" role="img" aria-label={missingDates} title={missingDates}>
+                <WarningIcon size={13} />
+              </span>
+            )}
+            {health && <HealthBadge level={health} label={healthMessage(node)} />}
           </span>
         )}
       </div>
@@ -114,11 +119,13 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
       )}
       {node.health && (
         <p className="health-note" data-health={node.health}>
+          {node.health !== 'onTrack' && <HealthBadge level={node.health} size={12} />}
           Health: <strong>{HEALTH_LABELS[node.health]}</strong>
         </p>
       )}
       {node.healthBelow && (
         <p className="health-note" data-health={node.healthBelow.atRisk ? 'atRisk' : 'needsAttention'}>
+          <HealthBadge level={node.healthBelow.atRisk ? 'atRisk' : 'needsAttention'} size={12} />
           Below: <strong>{healthCountsMessage(node.healthBelow)}</strong>
         </p>
       )}

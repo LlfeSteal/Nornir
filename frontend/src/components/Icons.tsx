@@ -118,15 +118,35 @@ export const ChevronDownIcon = (props: IconProps) => (
   </Icon>
 );
 
-/** Health flag, like the priority marks of Reminders: "!" needs attention, "!!" at risk.
- * The same glyph everywhere; its help tag says whether it comes from the item or below. */
-export const HealthBadge: React.FC<{ level: 'atRisk' | 'needsAttention'; label?: string }> = ({ level, label }) => (
+/** Health status, like SF Symbols: exclamationmark.octagon.fill (at risk) and
+ * exclamationmark.circle.fill (needs attention). The shape tells them apart without color;
+ * the help tag says whether the status is the item's own or comes from below. */
+export const HealthBadge: React.FC<{ level: 'atRisk' | 'needsAttention'; label?: string; size?: number }> = ({
+  level,
+  label,
+  size = 15,
+}) => (
   <span
     className="health"
     data-level={level}
-    // Without a label (e.g. in the legend, next to its text), the glyph is decorative.
+    // Without a label (e.g. in the legend, next to its text), the icon is decorative.
     {...(label ? { role: 'img', 'aria-label': label, title: label } : { 'aria-hidden': true })}
   >
-    {level === 'atRisk' ? '!!' : '!'}
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      {level === 'atRisk' ? (
+        <path
+          className="health-shape"
+          d="M8.4 2.6h7.2l5.8 5.8v7.2l-5.8 5.8H8.4l-5.8-5.8V8.4z"
+          fill="currentColor"
+          stroke="currentColor"
+          strokeWidth={1.6}
+          strokeLinejoin="round"
+        />
+      ) : (
+        <circle className="health-shape" cx="12" cy="12" r="10" fill="currentColor" />
+      )}
+      <path d="M12 7.2v5.6" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" />
+      <circle cx="12" cy="16.6" r="1.4" fill="#fff" />
+    </svg>
   </span>
 );

@@ -171,7 +171,7 @@ button { font: inherit; color: inherit; }
 .legend-swatch.linear { opacity: 0.55; }
 .legend-swatch.track { opacity: 0.3; }
 .legend-swatch.undated { background: color-mix(in srgb, var(--undated) 35%, transparent); outline: 1.5px dashed var(--undated-stroke); outline-offset: -1.5px; }
-.legend-item .health { margin-left: 0; cursor: inherit; }
+.legend-item .health { cursor: inherit; }
 .legend-swatch.overrun { background: repeating-linear-gradient(45deg, var(--overrun) 0 2px, color-mix(in srgb, var(--overrun) 30%, var(--card)) 2px 4px); }
 .legend-swatch.closed { background: repeating-linear-gradient(45deg, var(--closed-bg) 0 2px, var(--closed-stroke) 2px 4px); }
 
@@ -233,18 +233,17 @@ button { font: inherit; color: inherit; }
 .task-list-row[data-expanded] .task-list-name { font-weight: 600; }
 /* Closed rows: grayed out in the list, hatched on the timeline */
 .task-list-row[data-closed] .task-list-name { color: var(--text-secondary); }
-/* Rows without dates in GitLab: a warning sign after the name, an orange dashed outline on
-   the bar (whose dates are made up), no schedule color */
-.missing-dates { flex: none; display: inline-flex; margin-left: 6px; color: var(--warning); cursor: help; }
-/* GitLab health status: "!" needs attention, "!!" at risk, like the priorities of Reminders.
-   The same filled glyph for the row's own status and for its descendants'. */
-.health {
-  flex: none; display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 3px;
-  border-radius: 8px; font-size: 10px; font-weight: 800; line-height: 1; letter-spacing: -0.5px; cursor: help;
-  --health: var(--health-needs-attention);
-  color: #fff; background: var(--health);
-}
-.health[data-level='atRisk'] { --health: var(--health-at-risk); }
+/* Trailing accessories of a list row (missing dates, health status), like a macOS / iOS
+   table cell: pushed to the end of the row, so they line up from row to row */
+.task-list-name { min-width: 0; }
+.row-accessories { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding-left: 8px; }
+/* Rows without dates in GitLab: a warning sign, a gray dashed outline on the bar (whose
+   dates are made up), no schedule color */
+.missing-dates { flex: none; display: inline-flex; color: var(--warning); cursor: help; }
+/* GitLab health status, SF Symbols style: red octagon (at risk), orange circle (needs
+   attention), the same for the row's own status and for its descendants' */
+.health { flex: none; display: inline-flex; color: var(--health-needs-attention); cursor: help; }
+.health[data-level='atRisk'] { color: var(--health-at-risk); }
 .task-list-row[data-closed] .task-type-dot { background: var(--text-tertiary) !important; }
 
 /* Tree connectors, drawn in CSS so they join from row to row */
@@ -275,6 +274,8 @@ button { font: inherit; color: inherit; }
 .gantt-tooltip[data-undated] .progress-value { background: var(--undated); }
 .gantt-tooltip .missing-dates-note { display: flex; align-items: center; gap: 4px; color: var(--warning); }
 .gantt-tooltip .missing-dates-note strong { display: inline; margin: 0; font-size: inherit; color: inherit; }
+.gantt-tooltip .health-note { display: flex; align-items: center; gap: 4px; }
+.gantt-tooltip .health-note .health { cursor: inherit; }
 .gantt-tooltip .health-note strong { display: inline; margin: 0; font-size: inherit; }
 .gantt-tooltip .health-note[data-health='needsAttention'] strong { color: var(--health-needs-attention); }
 .gantt-tooltip .health-note[data-health='atRisk'] strong { color: var(--health-at-risk); }
@@ -394,8 +395,6 @@ button { font: inherit; color: inherit; }
   background: repeating-linear-gradient(45deg, var(--overrun) 0 3px, color-mix(in srgb, var(--overrun) 30%, var(--card)) 3px 6px);
 }
 .bar[data-undated]:not([data-group]) .bar-label.inside { color: var(--text); }
-/* The health glyph before the label, outlined with the card color to stand out on the bar */
-.bar-label .health { margin: 0 5px 0 0; cursor: inherit; box-shadow: 0 0 0 1.5px var(--card); }
 
 /* The tooltip floats above everything, next to the hovered bar */
 .gantt-tooltip-anchor { position: fixed; z-index: 30; width: max-content; max-width: 320px; pointer-events: none; }
