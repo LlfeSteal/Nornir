@@ -21,6 +21,7 @@ backend/
   internal/gitlab/structs.go        GraphQL deserialization structs
   internal/gitlab/tree_builder.go   tree-building algorithm (core business logic)
   internal/gitlab/tree_builder_test.go
+  internal/gitlab/tree_builder_bench_test.go   BenchmarkBuildGanttTree on a production-sized group
   internal/model/gantt.go           GanttTask pivot model (JSON sent to the frontend)
 frontend/
   src/App.tsx                       page: title + group, Refresh button, loading/error states
@@ -32,6 +33,7 @@ frontend/
   src/utils/period.ts               period presets, range filtering and bar clipping
   src/types/gantt.ts                TypeScript model (mirror of internal/model)
   e2e/                              Playwright tests (config in frontend/playwright.config.ts)
+  e2e/largeTree.ts                  production-sized dataset (~16,000 rows) for large.mocked.spec.ts
   nginx.conf, Dockerfile
 docker-compose.yml                  compose project "nornir" (nornir-backend, nornir-frontend)
 .env / .env.example                 configuration (.env is never committed)
@@ -82,6 +84,7 @@ docker compose down
 - `GET /api/labels` → `[{title, color}]`: labels of the group and of its ancestors (`includeAncestorGroups`), sorted by title. Same `refresh`, headers, errors and token-fingerprinted cache as `/api/gantt`. Separate on purpose: a large hierarchy has thousands of labels (4,205 for `gitlab-org`, 43 pages, ~27 s), so the frontend never waits for it. Project labels aren't in it: the frontend adds the labels found on the items.
 
 - **Cache** (`internal/cache`, used by both endpoints through `serveCached`): responses are cached **encoded** (JSON bytes, marshaled once). Up to 5 min old → `HIT`; up to 24 h → served at once as `STALE` while a background fetch refreshes them; older → dropped. Requests for a key share **a single fetch** (no pile-up of full GitLab walks when many users refresh), and the fetch runs on its own context (10 min timeout), **not the request's**: a closed tab or a proxy timeout doesn't waste it, its result is cached. Errors are not cached. At startup, with `GITLAB_TOKEN` set, `main` prefetches both keys. Work items and milestones are fetched in parallel. Each gantt fetch logs its item/row counts, JSON size and duration.
+- A production-sized group (≈5,000 items) is ≈16,000 rows with the copies (invariants 2 and 9) and ≈4 MB of JSON; building the tree takes ≈20 ms. The copies grow with the depth: the deep worst case (`deepGroup()`, 12,900 items on 5 levels of epics) is 86,270 rows, ≈19 MB of JSON, ≈80 ms (`go test -run xxx -bench 'BuildGanttTree|BuildDeepGroup' ./internal/gitlab`). nginx gzips `/api/` responses and waits up to 300 s for the backend (`proxy_read_timeout`, for a cold fetch).
 
 ## GitLab GraphQL pitfalls (learned the hard way)
 
@@ -147,6 +150,8 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 - **Go**: unit tests in `backend/internal/gitlab` (`buildGanttTree` takes an injected `now` to stay deterministic), `internal/cache` (shared fetch, stale data, cancelled requests; run with `-race`) and `cmd/server` (handlers against an `httptest` fake GitLab).
 - **Playwright**: in `frontend/e2e/` — **every new Playwright test is saved in the project**, never thrown away.
   - `*.mocked.spec.ts`: API mocked with `page.route`, datasets in `e2e/fixtures.ts` (`mockApi`, with an optional `delayMs`).
+  - `large.mocked.spec.ts` (load tests, datasets in `e2e/largeTree.ts`): the production-sized `largeTree()` (~16,000 rows), `manyEpicsTree()` (5,200 top-level epics of 2 to 5 issues, ~23,000 rows) and the worst case `deepTree()` (5 levels of epics under milestones, copies of every subtree: 86,270 rows on 7 levels, ~24 MB) must show in under 3 s, keep fewer than 100 list rows in the page (also at the bottom, and with every issue listed flat by the Issues filter), and expand / search / filter in under 1–2 s. Rows are virtualized: **a row off screen is not in the page** — scroll to it before asserting on it, and don't expect `toHaveCount` on rows below the fold.
+  - `deepTree()` applies the rules of `tree_builder.go` to the same work items as `deepGroup()` in `backend/internal/gitlab/tree_builder_deep_test.go`; both check the tree's IDs against the same SHA-256 (`DEEP.sha256` / `deepTreeSHA256`). **If the tree builder changes, both must be updated together.** The load tests run one at a time in a single worker (`test.describe.configure({ mode: 'default' })`): in parallel, browsers parsing tens of MB compete for the CPU and the timings flake. Don't call `expect` per row on these datasets (86,270 calls take minutes): collect, then assert once.
   - Chart selectors: bars are `.bar` (with the `data-*` above) holding `.bar-track`, `.linear-progress`, `.bar-progress` and `.bar-label`; colors are read with `getComputedStyle` (`toHex` in `gantt.mocked.spec.ts` also reads the `color(srgb …)` that `color-mix()` computes to). Calendar columns are `.calendar-cell`, the scroll container `.gantt-scroll`.
   - The default period is **This year**, relative to the real clock: `gantt.mocked.spec.ts` and the `@live` tests store `nornir.period = all` in a `beforeEach` (`page.addInitScript`) so they don't depend on the date. `period.mocked.spec.ts` tests the period with a fixed clock and the `periodTree` dataset. Selectors: buttons **Previous period** / **Next period**, the menu button named `Period: <label>` (`2026`, `Q4 2026`, `2025 – 2027`, `All dates`) and its `menuitemradio`s.
   - Helpers that read the DOM once (`listRows`, `barFill`, `todayLinePosition`…) don't retry: after an action (expand, view change), wait with a web-first assertion (`toBeVisible`, `expect.poll`) for the expected state before calling them — otherwise the test is flaky under load.
