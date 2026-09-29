@@ -65,6 +65,7 @@ cd frontend && npm install && npm run dev      # http://localhost:5173
 Nornir is made for groups with thousands of milestones, epics and issues:
 
 - **Cache.** Walking a large group takes GitLab many pages (100 items each), so the backend keeps the result in memory. Data less than 5 minutes old is served as is; older data (up to a day) is served **at once** while the backend fetches it again in the background, so the next visit is up to date. When `GITLAB_TOKEN` is set, the backend fills the cache when it starts, so the first visitor doesn't wait either. However many people open or refresh the chart, the backend fetches from GitLab **once at a time**, and a fetch goes on even when the page that started it is closed. Its log says how long each fetch took and how many items it found.
+- **Transfer.** nginx compresses the responses (a group of 5,000 items is about 4 MB of JSON, ten times less compressed).
 
 ## Tests
 
