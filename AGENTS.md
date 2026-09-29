@@ -34,6 +34,7 @@ frontend/
   src/utils/health.ts               health status flag of a row (own or from below), messages
   src/types/gantt.ts                TypeScript model (mirror of internal/model)
   e2e/                              Playwright tests (config in frontend/playwright.config.ts)
+  src/**/*.test.ts                  Vitest unit tests (config in frontend/vitest.config.ts)
   e2e/largeTree.ts                  production-sized dataset (~16,000 rows) for large.mocked.spec.ts
   nginx.conf, Dockerfile
 docker-compose.yml                  compose project "nornir" (nornir-backend, nornir-frontend)
@@ -53,6 +54,7 @@ cd backend && (set -a; . ../.env; set +a; go run ./cmd/server)
 
 # Frontend
 cd frontend && npm run build                # tsc + vite build
+cd frontend && npm run test:unit            # Vitest unit tests of src/utils (TZ=Europe/Paris)
 cd frontend && npm run dev                  # http://localhost:5173, proxies /api → localhost:8080
 
 # End-to-end tests (Playwright)
@@ -151,6 +153,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 
 ## Tests
 
+- **Frontend unit tests** (Vitest, `vitest.config.ts`): `src/**/*.test.ts`, next to the pure logic of `src/utils` (filters, health, period, schedule, flatten); `task()` in `src/utils/testing.ts` builds tree nodes. `npm run test:unit` runs them with `TZ=Europe/Paris` so date code meets a daylight saving change. They are type-checked by `npm run build` (`tsc` includes `src`). Add one for any new pure function; keep DOM and layout checks in Playwright.
 - **Go**: unit tests in `backend/internal/gitlab` (`buildGanttTree` takes an injected `now` to stay deterministic), `internal/cache` (shared fetch, stale data, cancelled requests; run with `-race`) and `cmd/server` (handlers against an `httptest` fake GitLab).
 - **Playwright**: in `frontend/e2e/` — **every new Playwright test is saved in the project**, never thrown away.
   - `*.mocked.spec.ts`: API mocked with `page.route`, datasets in `e2e/fixtures.ts` (`mockApi`, with an optional `delayMs`).
@@ -192,7 +195,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 ### Before committing
 
 1. `cd backend && go vet ./... && go test ./...`
-2. `cd frontend && npm run build && npm run test:e2e:mocked` (against a fresh build — see Tests)
+2. `cd frontend && npm run build && npm run test:unit && npm run test:e2e:mocked` (against a fresh build — see Tests)
 3. If the GitLab client or GraphQL queries changed: `npm run test:e2e` (includes `@live`) with the stack running.
 
 ### Documentation

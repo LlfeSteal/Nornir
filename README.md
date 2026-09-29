@@ -73,6 +73,7 @@ Nornir is made for groups with thousands of milestones, epics and issues:
 
 ```bash
 cd backend && go test ./...
+cd frontend && npm run test:unit         # Vitest, unit tests of the chart logic
 cd frontend && npm run test:e2e:mocked   # Playwright, mocked API
 cd frontend && npm run test:e2e          # + test against the real GitLab (docker stack running)
 ```
