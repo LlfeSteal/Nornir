@@ -67,3 +67,16 @@ describe('canonicalId', () => {
     expect(canonicalId('gid://gitlab/WorkItem/42')).toBe('gid://gitlab/WorkItem/42');
   });
 });
+
+describe('applyFilters: blocked', () => {
+  const ref = (id: string, closed = false) => ({ id, name: id, start: '2026-10-01', end: '2026-10-10', closed });
+  const blockedTree = [
+    task('M', { type: 'milestone', children: [task('A', { blockedBy: [ref('B')] })] }),
+    task('E', { type: 'epic', blockedBy: [ref('X', true)], children: [task('B', { blocking: [ref('A')] })] }),
+  ];
+
+  it('lists the items with an open blocker', () => {
+    expect(isFiltering({ ...DEFAULT_FILTERS, blocked: true })).toBe(true);
+    expect(applyFilters(blockedTree, { ...DEFAULT_FILTERS, blocked: true }).map((node) => node.id)).toEqual(['A_top']);
+  });
+});

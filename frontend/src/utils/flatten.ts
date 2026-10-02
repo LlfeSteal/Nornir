@@ -1,4 +1,5 @@
 import { GanttTask, GanttTaskType } from '../types/gantt';
+import type { DependencyRowInfo } from './dependencies';
 
 /** A row shown in the chart: an item of the tree and its place in it. */
 export interface Row {
@@ -11,6 +12,8 @@ export interface Row {
   // One entry per ancestor level below the top level: true when that ancestor has
   // siblings after it, i.e. when a vertical tree line must go through this row.
   guides: boolean[];
+  // Rows of the dependencies dialog only (see dependencySubgraph).
+  dependency?: DependencyRowInfo;
 }
 
 /** The rows actually shown, in order (each parent before its children): only the children

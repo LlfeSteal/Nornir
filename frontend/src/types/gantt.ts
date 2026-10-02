@@ -14,6 +14,19 @@ export interface Label {
   color: string;           // Hex color from GitLab, e.g. "#428bca"
 }
 
+/** The other end of a GitLab blocking link (see the backend's DependencyRef). */
+export interface DependencyRef {
+  id: string;              // GitLab global ID, never suffixed
+  name: string;
+  webUrl?: string;
+  start: string;
+  end: string;
+  closed?: boolean;
+  noStartDate?: boolean;
+  noDueDate?: boolean;
+  external?: boolean;      // Not in the group's data (another group or project)
+}
+
 export interface GanttTask {
   id: string;
   name: string;
@@ -30,5 +43,7 @@ export interface GanttTask {
   labels?: Label[];
   health?: HealthStatus;   // Own GitLab health status
   healthBelow?: HealthCounts; // Open descendants at risk / needing attention, when any
+  blockedBy?: DependencyRef[]; // GitLab "blocked by" links (work items only)
+  blocking?: DependencyRef[];  // GitLab "blocks" links
   children?: GanttTask[];  // Recursive children
 }

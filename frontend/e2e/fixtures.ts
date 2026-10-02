@@ -153,3 +153,49 @@ export const warningTree = [
     children: [{ id: 'I2', name: 'Open issue', type: 'issue', start: '2026-10-01', end: '2026-10-10', progress: 0, linearProgress: 100 }],
   },
 ];
+
+// Blocking links (tests run on 2026-10-15). Milestone 1.0 holds Auth API → Billing and
+// Checkout, which is blocked by Shipping rules (milestone 2.0) and by Vendor SDK, outside the
+// group; both end after Checkout starts. Standalone issue's only blocker is closed (hidden with
+// the closed items). Epics under a milestone also have their `_root_` copy, as the backend
+// sends them; every link is on both of its ends.
+const dep = (id: string, name: string, start: string, end: string, fields: Record<string, unknown> = {}) => ({ id, name, start, end, ...fields });
+const AUTH = dep('A', 'Auth API', '2026-10-01', '2026-10-10');
+const BILLING = dep('B', 'Billing', '2026-10-12', '2026-10-20');
+const CHECKOUT = dep('C', 'Checkout', '2026-10-05', '2026-10-30');
+const SHIPPING = dep('X', 'Shipping rules', '2026-10-01', '2026-10-15');
+const VENDOR = dep('V', 'Vendor SDK', '2026-10-01', '2026-10-08', { external: true, webUrl: 'https://gitlab.example.com/vendor/-/work_items/7' });
+const depEpics = (suffix: (id: string) => string) => {
+  const epic = (base: typeof AUTH, fields: Record<string, unknown>) => ({
+    ...base, id: suffix(base.id), type: 'epic', progress: 0, linearProgress: 50, webUrl: undefined, ...fields,
+  });
+  return {
+    auth: epic(AUTH, { blocking: [BILLING] }),
+    billing: epic(BILLING, { blockedBy: [AUTH] }),
+    checkout: epic(CHECKOUT, {
+      blockedBy: [SHIPPING, VENDOR],
+      children: [{ id: suffix('c1'), name: 'Cart page', type: 'issue', start: '2026-10-05', end: '2026-10-12', progress: 0, linearProgress: 100 }],
+    }),
+    shipping: epic(SHIPPING, { blocking: [CHECKOUT] }),
+  };
+};
+const depCanonical = depEpics((id) => id);
+const depRoot = (root: string) => depEpics((id) => `${id}_root_${root}`);
+export const dependencyTree = [
+  {
+    id: 'M1', name: '[Milestone] 1.0', type: 'milestone', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 48,
+    children: [depCanonical.auth, depCanonical.billing, depCanonical.checkout],
+  },
+  {
+    id: 'M2', name: '[Milestone] 2.0', type: 'milestone', start: '2026-10-01', end: '2026-10-31', progress: 0, linearProgress: 48,
+    children: [depCanonical.shipping],
+  },
+  {
+    id: 'I', name: 'Standalone issue', type: 'issue', start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 70,
+    blockedBy: [dep('D', 'Done task', '2026-09-01', '2026-09-30', { closed: true })],
+  },
+  depRoot('A').auth,
+  depRoot('B').billing,
+  depRoot('C').checkout,
+  depRoot('X').shipping,
+];

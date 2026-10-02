@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { expect, Page, test } from '@playwright/test';
 import { mockApi } from './fixtures';
-import { countRows, DEEP, deepTree, isClosedTask, largeTree, MANY_EPICS, manyEpicsTree } from './largeTree';
+import { countRows, DEEP, deepTree, isClosedTask, largeTree, linkedLargeTree, MANY_EPICS, manyEpicsTree } from './largeTree';
 
 // A production-sized group (~5,000 items, ~16,000 rows with the backend's copies): the chart
 // must show up quickly, render only the rows on screen and stay responsive.
@@ -98,6 +98,34 @@ test.describe('large group', () => {
     await expect.poll(() => calls.at(-1)).toContain('refresh=1');
     await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
     await expect(page.getByTitle('[Milestone] Sprint 0', { exact: true })).toBeVisible();
+  });
+});
+
+test.describe('large group with blocking links', () => {
+  const linked = linkedLargeTree();
+
+  test('the chart still shows up quickly', async ({ page }) => {
+    const { elapsed } = await open(page, linked);
+    expect(elapsed).toBeLessThan(3_000);
+    await expect(page.locator('.row-dependencies').first()).toBeVisible();
+  });
+
+  test("a milestone's dependencies open quickly, rendering only the rows on screen", async ({ page }) => {
+    await open(page, linked);
+    // Epic 0 holds ~100 issues, half of them blocked by another. Off screen: search it.
+    await page.getByRole('textbox', { name: 'Search' }).fill('Epic 0');
+    const row = page.locator('.task-list-row', { has: page.getByTitle('Epic 0', { exact: true }) });
+    const button = row.locator('.row-dependencies');
+    await expect(button).toBeVisible();
+    const count = Number(await button.textContent());
+    expect(count).toBeGreaterThan(10);
+    const dialog = page.getByRole('dialog', { name: 'Dependencies of Epic 0' });
+    expect(await timed(async () => {
+      await button.click();
+      await expect(dialog.locator('.dependency-links > path').first()).toBeVisible();
+    })).toBeLessThan(1_000);
+    await expect(dialog).toContainText(`${count} links`);
+    expect(await dialog.locator('.task-list-row').count()).toBeLessThan(100);
   });
 });
 

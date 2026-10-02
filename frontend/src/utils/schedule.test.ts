@@ -56,3 +56,14 @@ describe('rowWarnings', () => {
     expect(rowWarnings({ type: 'epic' })).toEqual([]);
   });
 });
+
+describe('rowWarnings: blockers', () => {
+  it('warns when an open blocker ends after the row starts, after the other warnings', () => {
+    const blockedBy = [{ id: 'b', name: 'Payments', start: '2026-10-01', end: '2026-10-08' }];
+    expect(rowWarnings({ type: 'epic', start: '2026-10-05', noChildren: true, blockedBy })).toEqual([
+      "No child items: progress can't be tracked (stays at 0% until closed)",
+      'Starts 3 days before Payments ends',
+    ]);
+    expect(rowWarnings({ type: 'issue', start: '2026-10-08', blockedBy })).toEqual([]);
+  });
+});

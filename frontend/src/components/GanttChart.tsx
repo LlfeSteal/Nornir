@@ -1,4 +1,4 @@
-import React, { forwardRef, memo, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, memo, useCallback, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GanttTask } from '../types/gantt';
 import { Row, visibleRows } from '../utils/flatten';
 import { TaskListHeader, TaskListRow, TooltipContent, rowSchedule } from './TaskList';
@@ -17,6 +17,7 @@ import { clipBar, DateRange } from '../utils/period';
 import { missingDatesMessage } from '../utils/schedule';
 import { rowHealth } from '../utils/health';
 import { overrun } from '../utils/overrun';
+import { DependencyLink } from '../utils/dependencies';
 
 // The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
 // calendar columns) on screen are rendered: one native scroll container moves everything,
@@ -27,6 +28,10 @@ interface Props {
   viewMode: ViewMode;
   /** The period shown (bars are cut at its edges), or null for every date. */
   range: DateRange | null;
+  /** The dependencies dialog: its flat rows (instead of the tree's) and the arrows between them. */
+  dependencies?: { rows: Row[]; links: DependencyLink[] };
+  /** Fixed room for the chart (the dialog), instead of the room left in the page. */
+  height?: number;
 }
 
 export interface GanttChartHandle {
@@ -55,7 +60,7 @@ interface Hover {
   bottom: number;
 }
 
-export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode, range }, ref) {
+export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode, range, dependencies, height }, ref) {
   // Groups are collapsed unless expanded by the user: everything starts collapsed,
   // including groups that appear after a refresh.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -64,7 +69,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
   const [viewport, setViewport] = useState<Viewport>({ top: 0, left: 0, width: window.innerWidth, height: window.innerHeight });
   const [hover, setHover] = useState<Hover | null>(null);
 
-  const rows = useMemo(() => visibleRows(data, expanded), [data, expanded]);
+  const rows = useMemo(() => dependencies?.rows ?? visibleRows(data, expanded), [dependencies, data, expanded]);
   const hasRows = rows.length > 0;
 
   // The timeline spans the period, or else every item (collapsed ones included, so that
@@ -148,6 +153,10 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
   // would be as tall as every row, and every row would be rendered.
   const [maxHeight, setMaxHeight] = useState(() => window.innerHeight);
   useLayoutEffect(() => {
+    if (height !== undefined) {
+      setMaxHeight(height);
+      return;
+    }
     const card = chartRef.current;
     const content = card?.parentElement;
     if (!card || !content) return;
@@ -159,7 +168,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
     const observer = new ResizeObserver(update);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [hasRows]);
+  }, [hasRows, height]);
 
   const toggle = useCallback((id: string) => {
     setExpanded((previous) => {
@@ -214,6 +223,17 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
                 onLeave={hideTooltip}
               />
             ))}
+            {dependencies && (
+              <DependencyLinks
+                rows={rows}
+                links={dependencies.links}
+                timeline={timeline}
+                range={range}
+                first={firstRow}
+                last={lastRow}
+                height={bodyHeight}
+              />
+            )}
             {todayX !== undefined && <div className="today-line" style={{ left: LIST_WIDTH + todayX }} />}
           </div>
         </div>
@@ -324,6 +344,8 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       data-nested={row.depth > 0 ? 'true' : undefined}
       data-health={health}
       data-overrun={past ? 'true' : undefined}
+      data-linked={row.dependency?.linked ? 'true' : undefined}
+      data-external={row.dependency?.external ? 'true' : undefined}
       style={{ left, width }}
       onMouseEnter={(event) => onHover(row, event)}
       onMouseLeave={onLeave}
@@ -338,6 +360,82 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       {pastWidth > 0 && <div className="bar-overrun" style={{ left: pastFrom - left, width: pastWidth }} />}
       <span className={labelInside ? 'bar-label inside' : 'bar-label'}>{node.name}</span>
     </div>
+  );
+}
+
+const ARROW_GAP = 10; // px, horizontal run out of a bar and into the next
+
+/** The arrows of the dependencies dialog, from each blocker's end to the start of what it
+ * blocks. Only the arrows crossing the rendered rows are drawn; positions come from the row
+ * indexes and the timeline, not from the page. */
+function DependencyLinks({
+  rows,
+  links,
+  timeline,
+  range,
+  first,
+  last,
+  height,
+}: {
+  rows: Row[];
+  links: DependencyLink[];
+  timeline: Timeline;
+  range: DateRange | null;
+  first: number;
+  last: number;
+  height: number;
+}) {
+  const marker = useId().replace(/:/g, ''); // React's ":r1:" breaks url(#…) references
+  const indexes = useMemo(() => new Map(rows.map((row, index) => [row.node.id, index])), [rows]);
+  const paths: { key: string; d: string; conflict: boolean; markerId: string }[] = [];
+  for (const link of links) {
+    const from = indexes.get(link.from);
+    const to = indexes.get(link.to);
+    if (from === undefined || to === undefined || Math.max(from, to) < first || Math.min(from, to) >= last) continue;
+    const x1 = timeline.x(clipBar(rows[from].node, range).end);
+    const x2 = timeline.x(clipBar(rows[to].node, range).start);
+    const y1 = from * ROW_HEIGHT + ROW_HEIGHT / 2;
+    const y2 = to * ROW_HEIGHT + ROW_HEIGHT / 2;
+    let d: string;
+    if (x2 - x1 >= 2 * ARROW_GAP) {
+      // Room between the bars: out, down (or up), in.
+      const x = x1 + ARROW_GAP;
+      d = `M${x1},${y1} H${x} V${y2} H${x2}`;
+    } else {
+      // The blocked item starts before the blocker ends: go round, along the row boundary.
+      const y = (to > from ? to : from) * ROW_HEIGHT;
+      d = `M${x1},${y1} h${ARROW_GAP} V${y} H${x2 - ARROW_GAP} V${y2} H${x2}`;
+    }
+    paths.push({ key: `${link.from} ${link.to}`, d, conflict: link.conflict, markerId: `${marker}${link.conflict ? 'c' : 'n'}` });
+  }
+  return (
+    <svg className="dependency-links" width={timeline.width} height={height} style={{ left: LIST_WIDTH }} aria-hidden="true">
+      <defs>
+        {(['n', 'c'] as const).map((kind) => (
+          <marker
+            key={kind}
+            id={`${marker}${kind}`}
+            viewBox="0 0 8 8"
+            refX="7"
+            refY="4"
+            markerWidth="8"
+            markerHeight="8"
+            orient="auto"
+            className={kind === 'c' ? 'conflict' : undefined}
+          >
+            <path d="M0,0 L8,4 L0,8 z" />
+          </marker>
+        ))}
+      </defs>
+      {paths.map((path) => (
+        <path
+          key={path.key}
+          d={path.d}
+          data-conflict={path.conflict ? 'true' : undefined}
+          markerEnd={`url(#${path.markerId})`}
+        />
+      ))}
+    </svg>
   );
 }
 

@@ -2,25 +2,27 @@ import { GanttTask, GanttTaskType, HealthStatus, Label } from '../types/gantt';
 import { HEALTH_LABELS } from './health';
 
 /** What the filter bar asks for: the types of items to show (all of them by default, none =
- * nothing), the labels they must carry (any of them), their health status (any of them) and
- * a text their name must contain. */
+ * nothing), the labels they must carry (any of them), their health status (any of them),
+ * whether they must be blocked and a text their name must contain. */
 export interface Filters {
   search: string;
   types: GanttTaskType[];
   labels: string[]; // label titles
   health: HealthStatus[];
+  blocked: boolean; // only items with an open blocker
 }
 
 export const ALL_TYPES: GanttTaskType[] = ['milestone', 'epic', 'issue'];
 
-export const DEFAULT_FILTERS: Filters = { search: '', types: ALL_TYPES, labels: [], health: [] };
+export const DEFAULT_FILTERS: Filters = { search: '', types: ALL_TYPES, labels: [], health: [], blocked: false };
 
 export function isFiltering(filters: Filters): boolean {
   return (
     filters.search.trim() !== '' ||
     ALL_TYPES.some((type) => !filters.types.includes(type)) ||
     filters.labels.length > 0 ||
-    filters.health.length > 0
+    filters.health.length > 0 ||
+    filters.blocked
   );
 }
 
@@ -81,6 +83,7 @@ export function applyFilters(tree: GanttTask[], filters: Filters): GanttTask[] {
     filters.types.includes(node.type) &&
     (filters.labels.length === 0 || hasLabel(node, filters.labels)) &&
     (filters.health.length === 0 || hasHealth(node, filters.health)) &&
+    (!filters.blocked || !!node.blockedBy?.some((ref) => !ref.closed)) &&
     (!search || normalizeText(node.name).includes(search));
 
   const issues: GanttTask[] = [];

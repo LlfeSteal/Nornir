@@ -4,7 +4,7 @@ import React from 'react';
 
 type IconProps = { size?: number; className?: string };
 
-function Icon({ size = 16, className, children }: IconProps & { children: React.ReactNode }) {
+function Icon({ size = 16, className, strokeWidth = 1.8, children }: IconProps & { strokeWidth?: number; children: React.ReactNode }) {
   return (
     <svg
       width={size}
@@ -12,7 +12,7 @@ function Icon({ size = 16, className, children }: IconProps & { children: React.
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.8}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
@@ -162,4 +162,21 @@ export const HealthBadge: React.FC<{ level: 'atRisk' | 'needsAttention'; label?:
       <circle cx="12" cy="16.6" r="1.4" fill="#fff" />
     </svg>
   </span>
+);
+
+/** Circle with a slash, like SF Symbols' nosign: an item with an open blocker. Stroked, so it
+ * doesn't read as the filled red octagon of the "at risk" health status. */
+export const BlockedIcon = (props: IconProps) => (
+  <Icon {...props} strokeWidth={2.2}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M6 6l12 12" />
+  </Icon>
+);
+
+/** Two chain links, like SF Symbols' link: the dependencies of a row. */
+export const LinkIcon = (props: IconProps) => (
+  <Icon {...props} strokeWidth={2}>
+    <path d="M10 13.5a4.5 4.5 0 0 0 6.4.4l2.8-2.8a4.5 4.5 0 0 0-6.4-6.4l-1.4 1.4" />
+    <path d="M14 10.5a4.5 4.5 0 0 0-6.4-.4l-2.8 2.8a4.5 4.5 0 0 0 6.4 6.4l1.4-1.4" />
+  </Icon>
 );

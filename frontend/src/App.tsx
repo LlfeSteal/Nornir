@@ -12,6 +12,9 @@ import { withoutClosed } from './utils/flatten';
 import { DEFAULT_FILTERS, Filters, applyFilters, labelOptions } from './utils/filters';
 import { useStoredBoolean, useStoredValue } from './utils/preferences';
 import { DEFAULT_PRESET, PERIOD_PRESETS, PeriodPreset, periodLabel, periodRange, withinPeriod } from './utils/period';
+import { dependencyIndex } from './utils/dependencies';
+import { DependencyContext } from './components/DependencyContext';
+import { DependencyDialog } from './components/DependencyDialog';
 
 const PRESET_VALUES = PERIOD_PRESETS.map((p) => p.value);
 const suggestedViewMode = (preset: PeriodPreset) => PERIOD_PRESETS.find((p) => p.value === preset)?.viewMode;
@@ -34,6 +37,8 @@ export const App: React.FC = () => {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   // Typing stays smooth on large trees: the chart follows the filters a bit later.
   const deferredFilters = useDeferredValue(filters);
+  // The row whose dependencies are shown in the dialog.
+  const [dependencyFor, setDependencyFor] = useState<GanttTask | null>(null);
 
   const load = useCallback(async (refresh = false) => {
     setLoading(true);
@@ -76,6 +81,13 @@ export const App: React.FC = () => {
   const inPeriod = useMemo(() => (openData ? withinPeriod(openData, range) : null), [openData, range]);
   const filtered = useMemo(() => (inPeriod ? applyFilters(inPeriod, deferredFilters) : null), [inPeriod, deferredFilters]);
   const labels = useMemo(() => labelOptions(groupLabels, openData ?? []), [groupLabels, openData]);
+  // The links of every item shown, whatever the period and the filters hide: a row's
+  // dependencies include its descendants and blockers that are filtered out.
+  const dependencies = useMemo(() => (openData ? dependencyIndex(openData, showClosed) : null), [openData, showClosed]);
+  const dependencyContext = useMemo(
+    () => (dependencies ? { index: dependencies, open: setDependencyFor } : null),
+    [dependencies],
+  );
 
   const hasOpenItems = !!openData && openData.length > 0;
   const hasItems = !!filtered && filtered.length > 0;
@@ -150,8 +162,20 @@ export const App: React.FC = () => {
         )}
         {/* Stays mounted while the filters match nothing (it renders nothing then), so the
             expanded rows survive until the filters are cleared. */}
-        {hasOpenItems && filtered && <GanttChart ref={chart} data={filtered} viewMode={viewMode} range={range} />}
+        {hasOpenItems && filtered && (
+          <DependencyContext.Provider value={dependencyContext}>
+            <GanttChart ref={chart} data={filtered} viewMode={viewMode} range={range} />
+          </DependencyContext.Provider>
+        )}
       </main>
+      {dependencyFor && dependencies && (
+        <DependencyDialog
+          node={dependencyFor}
+          index={dependencies}
+          viewMode={viewMode}
+          onClose={() => setDependencyFor(null)}
+        />
+      )}
     </>
   );
 };

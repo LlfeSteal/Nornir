@@ -1,5 +1,5 @@
 import React from 'react';
-import { HealthBadge } from './Icons';
+import { BlockedIcon, HealthBadge, LinkIcon } from './Icons';
 
 const TYPES = [
   { label: 'Milestone', color: 'var(--milestone)' },
@@ -7,7 +7,8 @@ const TYPES = [
   { label: 'Issue', color: 'var(--issue)' },
 ];
 
-// GitLab health status: a glyph in the list and on the bar, see utils/health.ts.
+// Row accessories: the GitLab health status (see utils/health.ts), blocked items and the
+// dependencies button (see utils/dependencies.ts).
 const HEALTH = [
   { label: 'At risk', level: 'atRisk' },
   { label: 'Needs attention', level: 'needsAttention' },
@@ -45,6 +46,18 @@ export const Legend: React.FC = () => (
           {item.label}
         </span>
       ))}
+      <span className="legend-item legend-blocked">
+        <span className="row-blocked">
+          <BlockedIcon size={13} />
+        </span>
+        Blocked
+      </span>
+      <span className="legend-item">
+        <span className="row-dependencies" aria-hidden="true">
+          <LinkIcon size={12} />
+        </span>
+        Dependencies
+      </span>
     </span>
     <span className="legend-group">
       <span className="legend-item legend-progress">

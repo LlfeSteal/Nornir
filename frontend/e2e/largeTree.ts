@@ -16,7 +16,17 @@ interface Row {
   webUrl?: string;
   closed?: boolean;
   labels?: { title: string; color: string }[];
+  blockedBy?: Link[];
+  blocking?: Link[];
   children?: Row[];
+}
+
+interface Link {
+  id: string;
+  name: string;
+  start: string;
+  end: string;
+  closed?: boolean;
 }
 
 export const LARGE = { milestones: 30, topEpics: 40, childEpics: 5, grandchildEpics: 3, issues: 4000 };
@@ -85,6 +95,33 @@ export function largeTree(): Row[] {
   // Nested epics listed at the top level too, depth-first, with their whole subtree.
   const copies = nested.map((row) => withSuffix(row, `_root_${row.id}`));
   return [...milestones, ...roots, ...copies];
+}
+
+// largeTree() with blocking links: every odd issue (Issue 1, 3, 5…) is blocked by the one
+// before it, 2,000 links (a third of them between open issues). As in the backend, the links
+// are on every row of an item.
+export function linkedLargeTree(): Row[] {
+  const rows = largeTree();
+  const link = (i: number): Link => {
+    const offset = 5 * (i % 70);
+    return { id: `I${i}`, name: `Issue ${i}`, start: day(offset), end: day(offset + 8), closed: i % 3 === 0 };
+  };
+  const blockedBy = new Map<string, Link[]>();
+  const blocking = new Map<string, Link[]>();
+  for (let i = 1; i < LARGE.issues; i += 2) {
+    blockedBy.set(`I${i}`, [link(i - 1)]);
+    blocking.set(`I${i - 1}`, [link(i)]);
+  }
+  const attach = (row: Row): Row => {
+    const id = row.id.replace(/_(ms|root)_[^_]*$/, '');
+    return {
+      ...row,
+      blockedBy: blockedBy.get(id),
+      blocking: blocking.get(id),
+      children: row.children?.map(attach),
+    };
+  };
+  return rows.map(attach);
 }
 
 /** Number of rows in the tree, copies included. */

@@ -43,6 +43,9 @@
   --health-at-risk: var(--red);
   --health-on-track: var(--green);
   --overrun: var(--red); /* the part of a bar planned past its parent's end, hatched */
+  --blocked: var(--red); /* an item with an open blocker (stroked sign, not the filled octagon) */
+  --dependency: #8e8e93; /* arrows of the dependencies dialog */
+  --dependency-conflict: var(--red); /* an arrow to an item starting before its blocker ends */
   --milestone-band: rgba(175, 82, 222, 0.1);
   --epic-band: rgba(0, 122, 255, 0.1);
   --issue-band: rgba(48, 176, 199, 0.1);
@@ -81,6 +84,7 @@
   --closed-stroke: rgba(142, 142, 147, 0.5);
   --undated: #636366;
   --undated-stroke: #98989d;
+  --dependency: #98989d;
   --milestone-band: rgba(191, 90, 242, 0.16);
   --epic-band: rgba(10, 132, 255, 0.16);
   --issue-band: rgba(64, 200, 224, 0.16);
@@ -173,6 +177,14 @@ button { font: inherit; color: inherit; }
 .legend-swatch.undated { background: color-mix(in srgb, var(--undated) 35%, transparent); outline: 1.5px dashed var(--undated-stroke); outline-offset: -1.5px; }
 .legend-item .health { cursor: inherit; }
 .legend-swatch.overrun { background: repeating-linear-gradient(45deg, var(--overrun) 0 2px, color-mix(in srgb, var(--overrun) 30%, var(--card)) 2px 4px); }
+.legend-swatch.linked { background: var(--undated); }
+.legend-arrow { position: relative; width: 22px; height: 0; border-top: 1.5px solid var(--dependency); }
+.legend-arrow::after {
+  content: ''; position: absolute; right: -1px; top: -4.75px;
+  border: 4px solid transparent; border-left: 6px solid var(--dependency); border-right: 0;
+}
+.legend-arrow.conflict { border-top-color: var(--dependency-conflict); }
+.legend-arrow.conflict::after { border-left-color: var(--dependency-conflict); }
 .legend-swatch.closed { background: repeating-linear-gradient(45deg, var(--closed-bg) 0 2px, var(--closed-stroke) 2px 4px); }
 
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
@@ -245,6 +257,19 @@ button { font: inherit; color: inherit; }
    attention), the same for the row's own status and for its descendants' */
 .health { flex: none; display: inline-flex; color: var(--health-needs-attention); cursor: help; }
 .health[data-level='atRisk'] { color: var(--health-at-risk); }
+/* Blocked items (an open "blocked by" link): a stroked no-entry sign */
+.row-blocked { flex: none; display: inline-flex; color: var(--blocked); cursor: help; }
+/* The dependencies of a row and its descendants: a small pill that opens the dialog */
+.row-dependencies {
+  flex: none; display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 6px;
+  border: 0; border-radius: 9px; background: var(--fill); color: var(--text-secondary);
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.row-dependencies:hover { background: var(--fill-pressed); color: var(--text); }
+/* Dependencies dialog: items linked from elsewhere, grayed, with where they sit */
+.task-list-row[data-linked] .task-list-name { color: var(--text-secondary); line-height: 1.25; }
+.task-list-detail { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--text-tertiary); }
+.task-list-row[data-linked] .task-type-dot { background: var(--undated) !important; }
 .task-list-row[data-closed] .task-type-dot { background: var(--text-tertiary) !important; }
 
 /* Tree connectors, drawn in CSS so they join from row to row */
@@ -281,6 +306,8 @@ button { font: inherit; color: inherit; }
 .gantt-tooltip .health-note strong { display: inline; margin: 0; font-size: inherit; }
 .gantt-tooltip .health-note[data-health='needsAttention'] strong { color: var(--health-needs-attention); }
 .gantt-tooltip .health-note[data-health='atRisk'] strong { color: var(--health-at-risk); }
+.gantt-tooltip .dependency-note strong, .gantt-tooltip .dependency-place strong { display: inline; margin: 0; font-size: inherit; }
+.gantt-tooltip .dependency-note[data-blocked] strong { color: var(--blocked); }
 .gantt-tooltip .overrun-note strong { display: inline; margin: 0; font-size: inherit; color: var(--overrun); }
 .gantt-tooltip[data-status='closed'] .progress-value { background: var(--text-tertiary); }
 .gantt-tooltip .schedule[data-status='closed'] strong { color: var(--text-secondary); }
@@ -397,6 +424,31 @@ button { font: inherit; color: inherit; }
   background: repeating-linear-gradient(45deg, var(--overrun) 0 3px, color-mix(in srgb, var(--overrun) 30%, var(--card)) 3px 6px);
 }
 .bar[data-undated]:not([data-group]) .bar-label.inside { color: var(--text); }
+/* Dependencies dialog: items linked from elsewhere are gray */
+.bar[data-linked] { --bar: var(--undated); }
+.bar[data-linked] .bar-label.inside { color: var(--text); }
+/* Arrows from each blocker's end to the start of what it blocks: over the rows, under the
+   sticky list */
+.dependency-links { position: absolute; top: 0; z-index: 1; overflow: visible; pointer-events: none; }
+.dependency-links path { fill: none; stroke: var(--dependency); stroke-width: 1.5; stroke-linejoin: round; }
+.dependency-links path[data-conflict] { stroke: var(--dependency-conflict); }
+.dependency-links marker path { fill: var(--dependency); stroke: none; }
+.dependency-links marker.conflict path { fill: var(--dependency-conflict); }
+
+/* Dependencies dialog: a modal sheet */
+.dependency-dialog {
+  width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px);
+  padding: 0; border: 0; border-radius: 14px; overflow: hidden;
+  background: var(--bg); color: var(--text); box-shadow: var(--popover-shadow);
+}
+.dependency-dialog[open] { display: flex; flex-direction: column; animation: menu-in 0.15s var(--ease); }
+.dependency-dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
+.dependency-dialog-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px 12px; }
+.dependency-dialog-title { flex: 1; min-width: 0; }
+.dependency-dialog-title h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
+.dependency-dialog-title p { margin: 2px 0 0; font-size: 12px; color: var(--text-secondary); }
+.dependency-dialog .gantt-chart { flex: none; margin: 0 16px; }
+.dependency-dialog .legend { padding: 10px 16px 14px; }
 
 /* The tooltip floats above everything, next to the hovered bar */
 .gantt-tooltip-anchor { position: fixed; z-index: 30; width: max-content; max-width: 320px; pointer-events: none; }

@@ -1,10 +1,13 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Row } from '../utils/flatten';
-import { ChevronIcon, HealthBadge, WarningFillIcon } from './Icons';
+import { BlockedIcon, ChevronIcon, HealthBadge, LinkIcon, WarningFillIcon } from './Icons';
 import { missingDatesMessage, noChildrenMessage, rowWarnings, scheduleLabel, scheduleStatus } from '../utils/schedule';
 import { parseDay } from '../utils/timeline';
 import { HEALTH_LABELS, healthCountsMessage, healthMessage, rowHealth } from '../utils/health';
 import { overrun, overrunMessage } from '../utils/overrun';
+import { blockedMessage, dependencyCount } from '../utils/dependencies';
+import { DependencyContext } from './DependencyContext';
+import { DependencyRef } from '../types/gantt';
 
 // The list side of a chart row (only the item's name, the dates are in the tooltip) and the
 // tooltip shown on a bar.
@@ -37,6 +40,11 @@ export const TaskListRow: React.FC<{
   const missingDates = missingDatesMessage(node);
   const warnings = rowWarnings(node);
   const health = rowHealth(node);
+  const blocked = blockedMessage(node);
+  const dependencies = useContext(DependencyContext);
+  const count = dependencies ? dependencyCount(dependencies.index, node) : 0;
+  const countLabel = `View ${count} ${count === 1 ? 'dependency' : 'dependencies'}`;
+  const linked = row.dependency?.linked;
   return (
     <div
       className="task-list-row"
@@ -48,6 +56,9 @@ export const TaskListRow: React.FC<{
       data-undated={missingDates ? 'true' : undefined}
       data-empty={noChildrenMessage(node) ? 'true' : undefined}
       data-health={health}
+      data-blocked={blocked ? 'true' : undefined}
+      data-linked={linked ? 'true' : undefined}
+      data-external={row.dependency?.external ? 'true' : undefined}
     >
       <div className="task-list-cell" title={node.name}>
         {row.guides.map((line, level) => (
@@ -69,10 +80,23 @@ export const TaskListRow: React.FC<{
           <span className="chevron-spacer" />
         )}
         <span className="task-type-dot" style={{ background: `var(--${node.type})` }} />
-        <div className="task-list-name">{node.name}</div>
+        {linked ? (
+          // An item linked from elsewhere: where it sits, under its name.
+          <div className="task-list-name">
+            {node.name}
+            <span className="task-list-detail">{dependencyPlace(row)}</span>
+          </div>
+        ) : (
+          <div className="task-list-name">{node.name}</div>
+        )}
         {/* Trailing accessories, like a macOS / iOS table cell: aligned from row to row. */}
-        {(warnings.length > 0 || health) && (
+        {(warnings.length > 0 || health || blocked || count > 0) && (
           <span className="row-accessories">
+            {blocked && (
+              <span className="row-blocked" role="img" aria-label={blocked} title={blocked}>
+                <BlockedIcon size={15} />
+              </span>
+            )}
             {/* One triangle for every warning, one line each in its help tag. */}
             {warnings.length > 0 && (
               <span className="row-warning" role="img" aria-label={warnings.join('. ')} title={warnings.join('\n')}>
@@ -80,12 +104,36 @@ export const TaskListRow: React.FC<{
               </span>
             )}
             {health && <HealthBadge level={health} label={healthMessage(node)} />}
+            {count > 0 && (
+              <button
+                type="button"
+                className="row-dependencies"
+                aria-label={countLabel}
+                title={countLabel}
+                onClick={() => dependencies?.open(node)}
+              >
+                <LinkIcon size={12} />
+                {count}
+              </button>
+            )}
           </span>
         )}
       </div>
     </div>
   );
 };
+
+/** Where a row of the dependencies dialog linked from elsewhere sits. */
+function dependencyPlace(row: Row): string {
+  if (row.dependency?.external) return 'Outside the group';
+  return row.dependency?.path ? `In ${row.dependency.path}` : 'Top level';
+}
+
+/** "A, B (closed) and 2 more". */
+function refNames(refs: DependencyRef[], max = 3): string {
+  const shown = refs.slice(0, max).map((ref) => (ref.closed ? `${ref.name} (closed)` : ref.name));
+  return refs.length > max ? `${shown.join(', ')} and ${refs.length - max} more` : shown.join(', ');
+}
 
 export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
   const { node } = row;
@@ -106,6 +154,7 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
         From {formatDay(parseDay(node.start))} to {formatDay(parseDay(node.end))}
       </p>
       <p>{progress}% complete</p>
+      {row.dependency?.linked && <p className="dependency-place">{dependencyPlace(row)}</p>}
       {closed && (
         <p className="schedule" data-status="closed">
           <strong>Closed</strong>
@@ -132,6 +181,16 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
         <p className="health-note" data-health={node.healthBelow.atRisk ? 'atRisk' : 'needsAttention'}>
           <HealthBadge level={node.healthBelow.atRisk ? 'atRisk' : 'needsAttention'} size={12} />
           Below: <strong>{healthCountsMessage(node.healthBelow)}</strong>
+        </p>
+      )}
+      {node.blockedBy && node.blockedBy.length > 0 && (
+        <p className="dependency-note" data-blocked={blockedMessage(node) ? 'true' : undefined}>
+          Blocked by <strong>{refNames(node.blockedBy)}</strong>
+        </p>
+      )}
+      {node.blocking && node.blocking.length > 0 && (
+        <p className="dependency-note">
+          Blocks <strong>{refNames(node.blocking)}</strong>
         </p>
       )}
       {schedule && (
