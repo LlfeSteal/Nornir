@@ -28,7 +28,7 @@ interface Props {
   viewMode: ViewMode;
   /** The period shown (bars are cut at its edges), or null for every date. */
   range: DateRange | null;
-  /** The dependencies dialog: its flat rows (instead of the tree's), the arrows between them and
+  /** The dependencies dialog: its expanded rows (instead of the tree's), the arrows between them and
    * the length of the critical path (the rest is dimmed when there is one). */
   dependencies?: { rows: Row[]; links: DependencyLink[]; critical: number };
   /** Fixed room for the chart (the dialog), instead of the room left in the page. */

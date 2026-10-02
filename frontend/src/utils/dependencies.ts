@@ -1,12 +1,12 @@
 import { DependencyRef, GanttTask } from '../types/gantt';
 import { canonicalId, TOP_COPY_SUFFIX } from './filters';
-import { Row } from './flatten';
+import { Row, visibleRows } from './flatten';
 import { parseDay } from './timeline';
 
 // GitLab "blocked by" / "blocks" links. In the chart: a mark on blocked rows and a red hatch on
 // the part of a bar planned before its blocker ends. A row whose subtree holds links opens them in a
-// dialog: a flat chart of the items involved, with arrows from each blocker to what it blocks and
-// the critical path brought forward.
+// dialog: a chart of the items involved under their parents, with arrows from each blocker to what
+// it blocks and the critical path brought forward.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -203,6 +203,7 @@ export interface DependencyRowInfo {
   external: boolean;
   path?: string;
   critical?: boolean; // on the critical path
+  context?: boolean; // a parent shown for its place, without a link of its own
 }
 
 export interface DependencyLink {
@@ -274,10 +275,12 @@ function externalTask(ref: DependencyRef): GanttTask {
   };
 }
 
-/** What must be done to finish a row, as flat rows: the items of its subtree blocked by
- * something, their blockers, the blockers' own (with their descendants'), and so on — not what
- * the row unblocks. Only items with a link; in dependency order (a blocker before what it
- * blocks; by start date otherwise, and in a cycle). */
+/** What must be done to finish a row: the items of its subtree blocked by something, their
+ * blockers, the blockers' own (with their descendants'), and so on — not what the row unblocks.
+ * The items with a link, those of the subtree under their parents (`context` rows for the parents
+ * without a link, the row itself left out), those from elsewhere at the top level. Fully
+ * expanded, siblings in dependency order (a blocker before what it blocks; by start date
+ * otherwise, and in a cycle). */
 export function dependencySubgraph(index: DependencyIndex, node: GanttTask): DependencySubgraph {
   const full = fullNode(index, node);
   const { ids, edges } = requiredEdges(index, full);
@@ -322,10 +325,57 @@ export function dependencySubgraph(index: DependencyIndex, node: GanttTask): Dep
     }
   }
 
-  const rows: Row[] = order.map((id) => {
-    const { task, info } = tasks.get(id)!;
-    return { node: task, hasChildren: false, depth: 0, isLast: false, guides: [], dependency: info };
-  });
+  // The parent of each item of the subtree: its first placement, depth first.
+  const rootId = gitlabId(full.id);
+  const parents = new Map<string, GanttTask>();
+  const visit = (parent: GanttTask) =>
+    parent.children?.forEach((child) => {
+      const id = gitlabId(child.id);
+      if (id !== rootId && !parents.has(id)) parents.set(id, parent);
+      visit(child);
+    });
+  visit(full);
+
+  // The tree of the dialog: each item under its parent, up to the row (left out); a parent
+  // without a link of its own is added for its place. Items from elsewhere at the top level.
+  const nodes = new Map<string, GanttTask>();
+  const roots: GanttTask[] = [];
+  const context: DependencyRowInfo = { linked: false, external: false, context: true };
+  const place = (id: string, task: GanttTask) => {
+    nodes.set(id, task);
+    const parent = parents.get(id);
+    const parentId = parent && gitlabId(parent.id);
+    if (!parent || !parentId || parentId === rootId || !ids.has(id)) {
+      roots.push(task);
+      return;
+    }
+    if (!nodes.has(parentId)) place(parentId, tasks.get(parentId)?.task ?? { ...parent, id: parentId, children: undefined });
+    const into = nodes.get(parentId)!;
+    into.children = [...(into.children ?? []), task];
+  };
+  for (const id of order) if (!nodes.has(id)) place(id, tasks.get(id)!.task);
+
+  // Siblings by the earliest item with a link they hold, in the order above.
+  const rank = new Map(order.map((id, position) => [id, position]));
+  const ranks = new Map<GanttTask, number>();
+  const rankOf = (task: GanttTask): number => {
+    let value = ranks.get(task);
+    if (value === undefined) {
+      value = Math.min(rank.get(task.id) ?? Infinity, ...(task.children ?? []).map(rankOf));
+      ranks.set(task, value);
+    }
+    return value;
+  };
+  const sort = (list: GanttTask[]) => {
+    list.sort((a, b) => rankOf(a) - rankOf(b));
+    list.forEach((task) => task.children && sort(task.children));
+  };
+  sort(roots);
+
+  const rows = visibleRows(roots, new Set(nodes.keys())).map((row) => ({
+    ...row,
+    dependency: tasks.get(row.node.id)?.info ?? context,
+  }));
   const links: DependencyLink[] = edges.map((edge) => {
     const blocker = tasks.get(edge.blocker)!.task;
     const blocked = tasks.get(edge.blocked)!.task;

@@ -199,3 +199,32 @@ export const dependencyTree = [
   depRoot('C').checkout,
   depRoot('X').shipping,
 ];
+
+// Dependencies inside a hierarchy, like a real milestone: Capability 2 › Feature 2 › US 1 and
+// Feature 1 › US 6, US 7. Feature 2 blocks Feature 1, US 1 blocks US 6 and US 7, US 6 blocks US 7.
+// Capability 2 has no link of its own: the dialog shows it for its place.
+const NF2 = dep('F2', 'Feature 2', '2026-09-01', '2026-10-09');
+const NF1 = dep('F1', 'Feature 1', '2026-10-05', '2026-10-30');
+const NUS1 = dep('U1', 'US 1', '2026-09-14', '2026-10-09');
+const NUS6 = dep('U6', 'US 6', '2026-10-05', '2026-10-16');
+const NUS7 = dep('U7', 'US 7', '2026-10-12', '2026-11-06');
+const nested = (base: typeof NF2, type: string, fields: Record<string, unknown> = {}) => ({ ...base, type, progress: 0, linearProgress: 50, ...fields });
+export const nestedDependencyTree = [
+  {
+    id: 'M1', name: '[Milestone] Milestone 1', type: 'milestone', start: '2026-09-01', end: '2026-10-31', progress: 0, linearProgress: 70,
+    children: [
+      nested(dep('CAP2', 'Capability 2', '2026-09-01', '2026-10-31'), 'epic', {
+        children: [
+          nested(NF2, 'epic', { blocking: [NF1], children: [nested(NUS1, 'issue', { blocking: [NUS7, NUS6] })] }),
+          nested(NF1, 'epic', {
+            blockedBy: [NF2],
+            children: [
+              nested(NUS7, 'issue', { blockedBy: [NUS1, NUS6] }),
+              nested(NUS6, 'issue', { blockedBy: [NUS1], blocking: [NUS7] }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  },
+];

@@ -60,14 +60,16 @@ export const TaskListRow: React.FC<{
       data-linked={linked ? 'true' : undefined}
       data-external={row.dependency?.external ? 'true' : undefined}
       data-critical={row.dependency?.critical ? 'true' : undefined}
+      data-context={row.dependency?.context ? 'true' : undefined}
     >
       <div className="task-list-cell" title={node.name}>
         {row.guides.map((line, level) => (
           <span key={level} className={line ? 'tree-guide line' : 'tree-guide'} />
         ))}
         {depth > 0 && <span className={row.isLast ? 'tree-branch last' : 'tree-branch'} />}
-        {/* Milestones are groups even when empty; only items with children can open. */}
-        {row.hasChildren ? (
+        {/* Milestones are groups even when empty; only items with children can open (not in the
+            dependencies dialog, fully expanded). */}
+        {row.hasChildren && !row.dependency ? (
           <button
             type="button"
             className="chevron"

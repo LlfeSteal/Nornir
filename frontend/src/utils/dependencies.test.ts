@@ -202,6 +202,35 @@ describe('dependencySubgraph', () => {
     expect(dependencyCount(index, data[0])).toBe(3);
   });
 
+  it('shows the items of the subtree under their parents, those from elsewhere at the top level', () => {
+    // m › cap › f1 (u1, u2), f2 (u3): u1 blocks u3, ext (outside the group) blocks u1.
+    const u1 = task('u1', { start: '2026-10-01', blockedBy: [ref('ext', { external: true })], blocking: [ref('u3')] });
+    const u3 = task('u3', { start: '2026-10-10', blockedBy: [ref('u1')] });
+    const f1 = task('f1', { type: 'epic', children: [u1, task('u2')] });
+    const f2 = task('f2', { type: 'epic', children: [u3] });
+    const cap = task('cap', { type: 'epic', children: [f2, f1] });
+    const m = task('m', { type: 'milestone', children: [cap] });
+    const index = dependencyIndex([m], false);
+    const { rows, critical } = dependencySubgraph(index, m);
+    expect(rows.map((row) => [row.node.id, row.depth, !!row.dependency?.context, row.parent?.id])).toEqual([
+      ['ext', 0, false, undefined],
+      ['cap', 0, true, undefined],
+      ['f1', 1, true, 'cap'], // holds u1, which comes before u3
+      ['u1', 2, false, 'f1'],
+      ['f2', 1, true, 'cap'],
+      ['u3', 2, false, 'f2'],
+    ]);
+    expect(rows.find((row) => row.node.id === 'u1')).toMatchObject({ guides: [true], isLast: true });
+    expect(rows.find((row) => row.node.id === 'cap')?.hasChildren).toBe(true);
+    expect(critical).toBe(3); // ext → u1 → u3
+    // From f2: u3 is its own child, no context row; u1 and its blocker come from elsewhere.
+    expect(dependencySubgraph(index, f2).rows.map((row) => [row.node.id, row.depth, row.dependency?.linked])).toEqual([
+      ['ext', 0, true],
+      ['u1', 0, true],
+      ['u3', 0, false],
+    ]);
+  });
+
   it('survives a cycle', () => {
     const a = task('a', { start: '2026-10-02', blockedBy: [ref('b')] });
     const b = task('b', { start: '2026-10-01', blockedBy: [ref('a')] });

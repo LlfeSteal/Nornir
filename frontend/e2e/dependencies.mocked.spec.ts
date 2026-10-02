@@ -1,5 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
-import { dependencyTree, mockApi } from './fixtures';
+import { dependencyTree, mockApi, nestedDependencyTree } from './fixtures';
 
 // GitLab blocking links: a mark on blocked rows, a red hatch on the part of a bar planned
 // before its blocker ends, the Blocked filter, and the dialog listing the dependencies of a row and its
@@ -192,6 +192,30 @@ test('the dialog brings the critical path forward and dims the rest', async ({ p
   await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(29, 29, 31)');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(245, 245, 247)');
+});
+
+test('the dialog shows the items under their parents, without chevrons', async ({ page }) => {
+  await mockApi(page, { body: nestedDependencyTree });
+  await page.reload();
+  await listRow(page, '[Milestone] Milestone 1').getByRole('button', { name: 'View 4 dependencies' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Dependencies of [Milestone] Milestone 1' });
+  // Capability 2 has no link: shown for its place, not counted.
+  await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('4 links · 5 items · critical path of 3');
+  const rows = sheet.locator('.task-list-row');
+  expect(await rows.evaluateAll((list) => list.map((row) => [row.querySelector('.task-list-cell')!.getAttribute('title'), row.getAttribute('data-depth')]))).toEqual([
+    ['Capability 2', '0'],
+    ['Feature 2', '1'],
+    ['US 1', '2'],
+    ['Feature 1', '1'],
+    ['US 6', '2'],
+    ['US 7', '2'],
+  ]);
+  await expect(listRow(page, 'Capability 2', sheet)).toHaveAttribute('data-context', 'true');
+  await expect(listRow(page, 'US 1', sheet)).not.toHaveAttribute('data-context');
+  await expect(listRow(page, 'US 1', sheet).locator('.tree-branch')).toHaveCount(1);
+  await expect(sheet.locator('.chevron')).toHaveCount(0);
+  expect(await rowNames(sheet.locator('.task-list-row[data-critical]'))).toEqual(['US 1', 'US 6', 'US 7']);
+  await expect(sheet.locator('.dependency-links > path')).toHaveCount(4);
 });
 
 test('the main chart dims nothing', async ({ page }) => {

@@ -13,15 +13,17 @@ interface Props {
   onClose: () => void;
 }
 
-/** The dependencies of a row and its descendants, in a modal sheet: a flat chart of the items
- * involved, with an arrow from each blocker to what it blocks. Items linked from elsewhere in
+/** The dependencies of a row and its descendants, in a modal sheet: a chart of the items
+ * involved under their parents (expanded, no chevrons), with an arrow from each blocker to what it blocks. Items linked from elsewhere in
  * the group, or from outside it, are grayed and say where they sit. */
 export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initialViewMode, onClose }) => {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const [viewMode, setViewMode] = useState(initialViewMode);
   const graph = useMemo(() => dependencySubgraph(index, node), [index, node]);
-  const data = useMemo(() => graph.rows.map((row) => row.node), [graph]);
+  // The top-level rows hold the others.
+  const data = useMemo(() => graph.rows.filter((row) => row.depth === 0).map((row) => row.node), [graph]);
+  const items = graph.rows.filter((row) => !row.dependency?.context).length;
   // The chart scrolls inside the sheet: never unbounded (see GanttChart).
   const height = Math.max(240, Math.floor(window.innerHeight * 0.7));
 
@@ -63,7 +65,7 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
         <div className="dependency-dialog-title">
           <h2 id={titleId}>Dependencies of {node.name}</h2>
           <p>
-            {links} {links === 1 ? 'link' : 'links'} · {graph.rows.length} items
+            {links} {links === 1 ? 'link' : 'links'} · {items} items
             {graph.critical > 0 && ` · critical path of ${graph.critical}`}
           </p>
         </div>
