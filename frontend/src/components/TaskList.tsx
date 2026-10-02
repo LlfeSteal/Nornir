@@ -158,7 +158,11 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
       </p>
       <p>{progress}% complete</p>
       {row.dependency?.linked && <p className="dependency-place">{dependencyPlace(row)}</p>}
-      {row.dependency?.critical && <p className="critical-note">On the critical path</p>}
+      {row.dependency?.critical && (
+        <p className="critical-note">
+          {row.dependency.criticalVia ? `On the critical path, ${row.dependency.criticalVia}` : 'On the critical path'}
+        </p>
+      )}
       {closed && (
         <p className="schedule" data-status="closed">
           <strong>Closed</strong>

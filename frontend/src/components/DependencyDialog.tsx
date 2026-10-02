@@ -46,7 +46,9 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
     return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
   };
 
-  const links = graph.links.length;
+  // GitLab links only, not the critical path's steps through epics.
+  const links = graph.links.filter((link) => !link.derived).length;
+  const derived = graph.links.some((link) => link.derived);
   return (
     // Escape closes the dialog natively, which fires `close`; so do Close and a click outside.
     <dialog
@@ -80,6 +82,12 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
           <span className="legend-item">
             <span className="legend-arrow critical" />
             Critical path
+          </span>
+        )}
+        {derived && (
+          <span className="legend-item">
+            <span className="legend-arrow critical derived" />
+            Through parent epics
           </span>
         )}
         <span className="legend-item">

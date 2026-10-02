@@ -393,7 +393,7 @@ function DependencyLinks({
 }) {
   const marker = useId().replace(/:/g, ''); // React's ":r1:" breaks url(#…) references
   const indexes = useMemo(() => new Map(rows.map((row, index) => [row.node.id, index])), [rows]);
-  const paths: { key: string; d: string; conflict: boolean; critical: boolean; markerId: string }[] = [];
+  const paths: { key: string; d: string; conflict: boolean; critical: boolean; derived: boolean; markerId: string }[] = [];
   for (const link of links) {
     const from = indexes.get(link.from);
     const to = indexes.get(link.to);
@@ -405,7 +405,14 @@ function DependencyLinks({
     const d = arrowPath(x1, y1, x2, y2, ROW_HEIGHT);
     // The critical path keeps its color when it conflicts: the bar's hatch shows the conflict.
     const kind = link.critical ? 'k' : link.conflict ? 'c' : 'n';
-    paths.push({ key: `${link.from} ${link.to}`, d, conflict: link.conflict, critical: !!link.critical, markerId: `${marker}${kind}` });
+    paths.push({
+      key: `${link.from} ${link.to}${link.derived ? ' derived' : ''}`,
+      d,
+      conflict: link.conflict,
+      critical: !!link.critical,
+      derived: !!link.derived,
+      markerId: `${marker}${kind}`,
+    });
   }
   // The critical path on top.
   paths.sort((a, b) => Number(a.critical) - Number(b.critical));
@@ -434,6 +441,7 @@ function DependencyLinks({
           d={path.d}
           data-conflict={path.conflict ? 'true' : undefined}
           data-critical={path.critical ? 'true' : undefined}
+          data-derived={path.derived ? 'true' : undefined}
           markerEnd={`url(#${path.markerId})`}
         />
       ))}

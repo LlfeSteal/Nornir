@@ -7,7 +7,6 @@ import {
   blockerConflicts,
   conflictMessage,
   criticalPath,
-  DependencyLink,
   dependencyCount,
   dependencyIndex,
   dependencySubgraph,
@@ -164,19 +163,19 @@ describe('dependencySubgraph', () => {
     const { rows, links, critical } = dependencySubgraph(index, tree()[0]);
     expect(rows.map((row) => [row.node.id, row.dependency])).toEqual([
       ['ext', { linked: true, external: true, path: undefined }],
-      ['A', { linked: false, external: false, path: 'm1' }],
-      ['X', { linked: true, external: false, path: 'm2', critical: true }],
-      ['C', { linked: false, external: false, path: 'm1', critical: true }],
-      ['B', { linked: false, external: false, path: 'm1' }],
+      ['A', { linked: false, external: false, path: 'm1', critical: true }],
+      ['X', { linked: true, external: false, path: 'm2' }],
+      ['C', { linked: false, external: false, path: 'm1' }],
+      ['B', { linked: false, external: false, path: 'm1', critical: true }],
     ]);
     // Flat rows: no chevrons in the dialog.
     expect(rows.every((row) => !row.hasChildren && !row.node.children && row.depth === 0)).toBe(true);
     expect(links).toEqual([
-      { from: 'A', to: 'B', conflict: false },
-      { from: 'X', to: 'C', conflict: true, critical: true }, // C starts on the 5th, X ends on the 15th
+      { from: 'A', to: 'B', conflict: false, critical: true },
+      { from: 'X', to: 'C', conflict: true }, // C starts on the 5th, X ends on the 15th
       { from: 'ext', to: 'C', conflict: true },
     ]);
-    // C ends last; X, which ends after ext, holds it up.
+    // Of the leaves (A, B and C's c1), B ends last; A holds it up.
     expect(critical).toBe(2);
   });
 
@@ -198,7 +197,13 @@ describe('dependencySubgraph', () => {
     const index = dependencyIndex(data, false);
     const { rows, links } = dependencySubgraph(index, data[0]);
     expect(rows.map((row) => row.node.id).sort()).toEqual(['C', 'V', 'W', 'X', 'x1']);
-    expect(links.map((link) => `${link.from} ${link.to}`)).toEqual(['X C', 'V X', 'W x1']);
+    expect(links.filter((link) => !link.derived).map((link) => `${link.from} ${link.to}`)).toEqual(['X C', 'V X', 'W x1']);
+    // The critical path, on the leaves: W → x1, then x1 → C through X → C (dashed).
+    expect(links.filter((link) => link.critical)).toEqual([
+      { from: 'W', to: 'x1', conflict: true, critical: true }, // same dates: each starts before its blocker ends
+      { from: 'x1', to: 'C', conflict: true, critical: true, derived: true },
+    ]);
+    expect(rows.find((row) => row.node.id === 'C')?.dependency?.criticalVia).toBe('after x1 (through X → C)');
     expect(rows.find((row) => row.node.id === 'x1')?.dependency).toMatchObject({ linked: true, path: 'm2 › X' });
     expect(dependencyCount(index, data[0])).toBe(3);
   });
@@ -244,79 +249,65 @@ describe('dependencySubgraph', () => {
 });
 
 describe('criticalPath', () => {
-  const rowsOf = (...tasks: GanttTask[]) => tasks.map((node) => ({ node, hasChildren: false, depth: 0, isLast: false, guides: [] }));
-  const link = (from: string, to: string): DependencyLink => ({ from, to, conflict: false });
+  const ids = (index: ReturnType<typeof dependencyIndex>, root: GanttTask) => criticalPath(index, root).ids;
 
-  it('ends at the blocked item that ends last and walks back through the blocker ending last', () => {
-    const rows = rowsOf(
-      task('a', { end: '2026-10-05' }),
-      task('b', { end: '2026-10-09' }),
-      task('c', { end: '2026-10-20' }),
-      task('d', { end: '2026-10-30' }),
-      task('e', { end: '2026-10-25' }),
-    );
-    // a → c, b → c, c → d; e blocks nothing and isn't blocked.
-    expect(criticalPath(rows, [link('a', 'c'), link('b', 'c'), link('c', 'd')])).toEqual(['b', 'c', 'd']);
+  it('ends at the leaf that ends last, even when nothing blocks it', () => {
+    const b = task('b', { end: '2026-10-20', blockedBy: [ref('c')] });
+    const m = task('m', { type: 'milestone', children: [task('a', { end: '2026-10-30' }), b] });
+    const index = dependencyIndex([m, task('c', { end: '2026-10-12' })], false);
+    expect(criticalPath(index, m)).toEqual({ ids: ['a'], steps: [] });
   });
 
-  it('prefers the longer chain between items ending together, then the earliest start', () => {
-    const rows = rowsOf(
-      task('a', { start: '2026-10-01', end: '2026-10-05' }),
-      task('b', { start: '2026-10-06', end: '2026-10-10' }),
-      task('c', { start: '2026-10-11', end: '2026-10-30' }),
-      task('x', { start: '2026-10-02', end: '2026-10-08' }),
-      task('y', { start: '2026-10-09', end: '2026-10-30' }),
-    );
-    expect(criticalPath(rows, [link('x', 'y'), link('a', 'b'), link('b', 'c')])).toEqual(['a', 'b', 'c']);
-    expect(criticalPath(rows, [link('x', 'y'), link('b', 'c')])).toEqual(['x', 'y']);
+  it('goes from user story to user story, through the blocked and blocking epics', () => {
+    // Milestone 1 › Capability 2 › Feature 2 (US 1), Feature 1 (US 6, US 7); Milestone 2 ›
+    // Capability 1 › Feature 4 (US 9, US 10), feature 3 (US 4, without due date).
+    const us = (id: string, start: string, end: string, blockedBy: string[] = [], fields: Partial<GanttTask> = {}) =>
+      task(id, { start, end, blockedBy: blockedBy.map((blocker) => ref(blocker)), ...fields });
+    const f1 = task('F1', {
+      type: 'epic',
+      blockedBy: [ref('F2'), ref('F4')],
+      children: [us('US6', '2026-10-05', '2026-10-16', ['US1', 'US4']), us('US7', '2026-10-12', '2026-11-06', ['US1', 'US6', 'US10'])],
+    });
+    const f2 = task('F2', { type: 'epic', children: [us('US1', '2026-09-14', '2026-10-09')] });
+    const m1 = task('M1', { type: 'milestone', children: [task('CAP2', { type: 'epic', children: [f2, f1] })] });
+    const f4 = task('F4', { type: 'epic', end: '2026-10-20', children: [us('US9', '2026-09-15', '2026-10-02'), us('US10', '2026-09-28', '2026-10-14', ['US9'])] });
+    const f3 = task('F3', { type: 'epic', children: [us('US4', '2026-10-02', '2026-10-03', [], { noDueDate: true })] });
+    const m2 = task('M2', { type: 'milestone', children: [task('CAP1', { type: 'epic', children: [f4, f3] })] });
+    const index = dependencyIndex([m1, m2], false);
+    const path = criticalPath(index, m1);
+    // US 7 ends last. US 6 (10/16) ends after US 10 (10/14); US 10 holds US 6 up through
+    // Feature 4 → Feature 1 (F4's own dates don't count, its user stories do).
+    expect(path.ids).toEqual(['US9', 'US10', 'US6', 'US7']);
+    expect(path.steps.map((step) => [step.from, step.to, step.direct, `${step.edge.blocker} ${step.edge.blocked}`])).toEqual([
+      ['US9', 'US10', true, 'US9 US10'],
+      ['US10', 'US6', false, 'F4 F1'],
+      ['US6', 'US7', true, 'US6 US7'],
+    ]);
   });
 
-  it('ends inside the row: an item it blocks elsewhere is ignored, a blocker from elsewhere counts', () => {
-    const linked = { linked: true, external: false };
-    const rows = [
-      ...rowsOf(task('a', { end: '2026-10-10' })),
-      { ...rowsOf(task('x', { end: '2026-10-12' }))[0], dependency: linked },
-      ...rowsOf(task('b', { end: '2026-10-20' })),
-      { ...rowsOf(task('z', { end: '2026-10-30' }))[0], dependency: linked },
+  it("prefers the leaf's own links in a tie and skips closed and undated leaves", () => {
+    const leaf = task('L', {
+      end: '2026-10-30',
+      blockedBy: [ref('a'), ref('c', { closed: true }), ref('d')],
+    });
+    const epic = task('E', { type: 'epic', blockedBy: [ref('b')], children: [leaf] });
+    const others = [
+      task('a', { end: '2026-10-15' }),
+      task('b', { end: '2026-10-15' }),
+      task('c', { end: '2026-10-25', closed: true }),
+      task('d', { end: '2026-10-28', noDueDate: true }),
     ];
-    // x (elsewhere) → b; a → b; b → z (elsewhere, ends last).
-    expect(criticalPath(rows, [link('x', 'b'), link('a', 'b'), link('b', 'z')])).toEqual(['x', 'b']);
-    expect(criticalPath(rows, [link('b', 'z')])).toEqual([]);
+    const index = dependencyIndex([epic, ...others], true);
+    expect(ids(index, epic)).toEqual(['a', 'L']);
   });
 
-  it('follows the blockers of the ancestors: a blocked epic holds up its children', () => {
-    const rows = rowsOf(
-      task('f4', { end: '2026-10-20' }), // blocks f1
-      task('f1', { end: '2026-10-30' }),
-      task('u6', { end: '2026-10-16' }), // in f1, blocks u7
-      task('u7', { end: '2026-11-06' }), // in f1
-      task('f2', { end: '2026-10-16' }), // blocks f1, ends with u6
-    );
-    const parents = new Map([['u6', 'f1'], ['u7', 'f1']]);
-    const links = [link('f4', 'f1'), link('u6', 'u7')];
-    // f4 ends after u6: it holds u7 up, through f1.
-    expect(criticalPath(rows, links, parents)).toEqual(['f4', 'f1', 'u7']);
-    // u7's own blocker u6 wins the tie with f2; f2 then holds u6 up, through f1.
-    expect(criticalPath(rows, [link('f2', 'f1'), link('u6', 'u7')], parents)).toEqual(['f2', 'f1', 'u6', 'u7']);
-    // Without the hierarchy, only its own blockers.
-    expect(criticalPath(rows, links)).toEqual(['u6', 'u7']);
-  });
-
-  it("skips closed items and made-up due dates", () => {
-    const rows = rowsOf(
-      task('a', { end: '2026-10-12' }),
-      task('b', { end: '2026-10-15', closed: true }),
-      task('c', { end: '2026-10-14', noDueDate: true }),
-      task('d', { end: '2026-10-30' }),
-    );
-    expect(criticalPath(rows, [link('a', 'd'), link('b', 'd'), link('c', 'd')])).toEqual(['a', 'd']);
-    expect(criticalPath(rows, [link('b', 'd'), link('c', 'd')])).toEqual([]);
-  });
-
-  it('is empty without links and survives a cycle', () => {
-    expect(criticalPath(rowsOf(task('a')), [])).toEqual([]);
-    const rows = rowsOf(task('a', { end: '2026-10-10' }), task('b', { end: '2026-10-12' }));
-    expect(criticalPath(rows, [link('a', 'b'), link('b', 'a')])).toEqual(['a', 'b']);
+  it('is empty without open leaves and survives a cycle', () => {
+    const done = task('m', { type: 'milestone', children: [task('x', { closed: true })] });
+    expect(ids(dependencyIndex([done], true), done)).toEqual([]);
+    const a = task('a', { end: '2026-10-10', blockedBy: [ref('b')] });
+    const b = task('b', { end: '2026-10-12', blockedBy: [ref('a')] });
+    const m = task('m', { type: 'milestone', children: [a, b] });
+    expect(ids(dependencyIndex([m], false), m)).toEqual(['a', 'b']);
   });
 });
 

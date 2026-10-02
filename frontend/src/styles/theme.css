@@ -188,6 +188,7 @@ button { font: inherit; color: inherit; }
 .legend-arrow.conflict::after { border-left-color: var(--dependency-conflict); }
 .legend-arrow.critical { border-top: 2px solid var(--critical); }
 .legend-arrow.critical::after { top: -5px; border-left-color: var(--critical); }
+.legend-arrow.derived { border-top-style: dashed; }
 .legend-swatch.closed { background: repeating-linear-gradient(45deg, var(--closed-bg) 0 2px, var(--closed-stroke) 2px 4px); }
 
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
@@ -443,6 +444,8 @@ button { font: inherit; color: inherit; }
    hatch shows it), the rest of the dialog dimmed. No outline, no badge: contrast is enough. */
 .dependency-links path[data-critical] { stroke: var(--critical); stroke-width: 2; }
 .dependency-links marker.critical path { fill: var(--critical); }
+/* A step of the critical path through epics, without a GitLab link of its own: dashed. */
+.dependency-links path[data-derived] { stroke-dasharray: 4 3; }
 [data-critical-path] .bar, [data-critical-path] .dependency-links > path { transition: opacity 0.2s var(--ease), filter 0.15s var(--ease); }
 [data-critical-path] .bar:not([data-critical]), [data-critical-path] .dependency-links > path:not([data-critical]) { opacity: 0.35; }
 [data-critical-path] .bar:not([data-critical]):hover { opacity: 1; }

@@ -146,51 +146,54 @@ test('an arrow runs from the blocker\'s end to the start of what it blocks', asy
 });
 
 test('arrows stay visible in dark mode', async ({ page }) => {
+  await mockApi(page, { body: nestedDependencyTree });
+  await page.reload();
   await page.emulateMedia({ colorScheme: 'dark' });
-  await listRow(page, '[Milestone] 1.0').getByRole('button', { name: 'View 3 dependencies' }).click();
-  const arrow = dialog(page).locator('.dependency-links > path:not([data-conflict])');
-  await expect(arrow).toHaveCSS('stroke', 'rgb(152, 152, 157)');
-  await expect(dialog(page).locator('.dependency-links > path[data-conflict]').first()).toHaveCSS('stroke', 'rgb(255, 69, 58)');
+  await listRow(page, '[Milestone] Milestone 1').getByRole('button', { name: 'View 7 dependencies' }).click();
+  const links = page.getByRole('dialog').locator('.dependency-links');
+  await expect(links.locator('> path:not([data-conflict]):not([data-critical])').first()).toHaveCSS('stroke', 'rgb(152, 152, 157)');
+  await expect(links.locator('> path[data-conflict]:not([data-critical])').first()).toHaveCSS('stroke', 'rgb(255, 69, 58)');
+  await expect(links.locator('> path[data-critical]').first()).toHaveCSS('stroke', 'rgb(245, 245, 247)');
 });
 
 test('the dialog brings the critical path forward and dims the rest', async ({ page }) => {
   await listRow(page, '[Milestone] 1.0').getByRole('button', { name: 'View 3 dependencies' }).click();
   const sheet = dialog(page);
-  // Checkout ends last; of its blockers, Shipping rules ends after Vendor SDK.
+  // Of the milestone's leaves (Auth API, Billing, Checkout's Cart page), Billing ends last;
+  // Auth API holds it up.
   await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('3 links · 5 items · critical path of 2');
   const critical = sheet.locator('.task-list-row[data-critical]');
   await expect(critical).toHaveCount(2);
   expect(await critical.locator('.task-list-cell').evaluateAll((cells) => cells.map((c) => c.getAttribute('title')))).toEqual([
-    'Shipping rules',
-    'Checkout',
+    'Auth API',
+    'Billing',
   ]);
-  await expect(listRow(page, 'Checkout', sheet).locator('.task-list-name')).toHaveCSS('font-weight', '600');
+  await expect(listRow(page, 'Billing', sheet).locator('.task-list-name')).toHaveCSS('font-weight', '600');
 
   // Its bars at full strength, the others faded.
   const barOf = (name: string) => sheet.locator('.bar', { has: page.locator('.bar-label', { hasText: new RegExp(`^${name}$`) }) });
-  await expect(barOf('Checkout')).toHaveAttribute('data-critical', 'true');
-  await expect(barOf('Checkout')).toHaveCSS('opacity', '1');
-  await expect(barOf('Billing')).not.toHaveAttribute('data-critical');
-  await expect(barOf('Billing')).toHaveCSS('opacity', '0.35');
+  await expect(barOf('Billing')).toHaveAttribute('data-critical', 'true');
+  await expect(barOf('Billing')).toHaveCSS('opacity', '1');
+  await expect(barOf('Checkout')).not.toHaveAttribute('data-critical');
+  await expect(barOf('Checkout')).toHaveCSS('opacity', '0.35');
 
-  // One critical arrow, thicker, in the strongest neutral even though Checkout starts before its
-  // blocker ends (the bar's hatch shows that).
+  // One critical arrow, thicker, in the strongest neutral.
   const arrow = sheet.locator('.dependency-links > path[data-critical]');
   await expect(arrow).toHaveCount(1);
-  await expect(arrow).toHaveAttribute('data-conflict', 'true');
   await expect(arrow).toHaveCSS('stroke', 'rgb(29, 29, 31)');
   await expect(arrow).toHaveCSS('stroke-width', '2px');
   await expect(arrow).toHaveCSS('opacity', '1');
   await expect(sheet.locator('.dependency-links > path:not([data-critical])').first()).toHaveCSS('opacity', '0.35');
 
   // The tooltip says it.
-  const label = (await barOf('Checkout').locator('.bar-label').boundingBox())!;
+  const label = (await barOf('Billing').locator('.bar-label').boundingBox())!;
   await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
   await expect(page.locator('.gantt-tooltip .critical-note')).toHaveText('On the critical path');
 
   // The legend's critical arrow is the strongest neutral, in both appearances.
   const legendArrow = sheet.getByLabel('Dependencies legend').locator('.legend-arrow.critical');
   await expect(sheet.getByLabel('Dependencies legend')).toContainText('Critical path');
+  await expect(sheet.getByLabel('Dependencies legend')).not.toContainText('Through parent epics');
   await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(29, 29, 31)');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(245, 245, 247)');
@@ -199,10 +202,10 @@ test('the dialog brings the critical path forward and dims the rest', async ({ p
 test('the dialog shows the items under their parents, without chevrons', async ({ page }) => {
   await mockApi(page, { body: nestedDependencyTree });
   await page.reload();
-  await listRow(page, '[Milestone] Milestone 1').getByRole('button', { name: 'View 5 dependencies' }).click();
+  await listRow(page, '[Milestone] Milestone 1').getByRole('button', { name: 'View 7 dependencies' }).click();
   const sheet = page.getByRole('dialog', { name: 'Dependencies of [Milestone] Milestone 1' });
   // Capability 2 has no link: shown for its place, not counted.
-  await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('5 links · 6 items · critical path of 3');
+  await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('7 links · 8 items · critical path of 4');
   const rows = sheet.locator('.task-list-row');
   expect(await rows.evaluateAll((list) => list.map((row) => [row.querySelector('.task-list-cell')!.getAttribute('title'), row.getAttribute('data-depth')]))).toEqual([
     ['Capability 2', '0'],
@@ -211,20 +214,37 @@ test('the dialog shows the items under their parents, without chevrons', async (
     ['Feature 1', '1'],
     ['US 6', '2'],
     ['US 7', '2'],
-    ['Feature 4', '0'], // from elsewhere
+    ['US 9', '0'], // from elsewhere; starts with Feature 4, ends first
+    ['Feature 4', '0'],
+    ['US 10', '0'],
   ]);
   await expect(listRow(page, 'Capability 2', sheet)).toHaveAttribute('data-context', 'true');
   await expect(listRow(page, 'US 1', sheet)).not.toHaveAttribute('data-context');
   await expect(listRow(page, 'US 1', sheet).locator('.tree-branch')).toHaveCount(1);
   await expect(sheet.locator('.chevron')).toHaveCount(0);
-  // Feature 4 blocks Feature 1 until after US 6 ends: through Feature 1, it holds US 7 up.
-  expect(await rowNames(sheet.locator('.task-list-row[data-critical]'))).toEqual(['Feature 1', 'US 7', 'Feature 4']);
-  await expect(sheet.locator('.dependency-links > path')).toHaveCount(5);
-  // One critical arrow, Feature 4 → Feature 1: black although Feature 1 starts before it ends.
-  const arrow = sheet.locator('.dependency-links > path[data-critical]');
-  await expect(arrow).toHaveCount(1);
-  await expect(arrow).toHaveAttribute('data-conflict', 'true');
-  await expect(arrow).toHaveCSS('stroke', 'rgb(29, 29, 31)');
+});
+
+test('the critical path goes from user story to user story, dashed through epics', async ({ page }) => {
+  await mockApi(page, { body: nestedDependencyTree });
+  await page.reload();
+  await listRow(page, '[Milestone] Milestone 1').getByRole('button', { name: 'View 7 dependencies' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Dependencies of [Milestone] Milestone 1' });
+  // US 7 ends last; US 6 holds it up; US 10 holds US 6 up through Feature 4 → Feature 1; US 9, US 10.
+  expect(await rowNames(sheet.locator('.task-list-row[data-critical]'))).toEqual(['US 6', 'US 7', 'US 9', 'US 10']);
+  // 7 GitLab links, plus the step US 10 → US 6, dashed.
+  await expect(sheet.locator('.dependency-links > path')).toHaveCount(8);
+  await expect(sheet.locator('.dependency-links > path[data-critical]')).toHaveCount(3);
+  const derived = sheet.locator('.dependency-links > path[data-derived]');
+  await expect(derived).toHaveCount(1);
+  await expect(derived).toHaveAttribute('data-critical', 'true');
+  await expect(derived).toHaveCSS('stroke', 'rgb(29, 29, 31)');
+  await expect(derived).toHaveCSS('stroke-dasharray', '4px, 3px');
+  await expect(sheet.getByLabel('Dependencies legend')).toContainText('Through parent epics');
+
+  const barOf = (name: string) => sheet.locator('.bar', { has: page.locator('.bar-label', { hasText: new RegExp(`^${name}$`) }) });
+  const label = (await barOf('US 6').locator('.bar-label').boundingBox())!;
+  await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
+  await expect(page.locator('.gantt-tooltip .critical-note')).toHaveText('On the critical path, after US 10 (through Feature 4 → Feature 1)');
 });
 
 test('the main chart dims nothing', async ({ page }) => {

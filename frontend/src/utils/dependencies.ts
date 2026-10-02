@@ -97,6 +97,9 @@ export interface DependencyIndex {
   externals: Map<string, DependencyRef>;
   /** Edges by GitLab ID of either end. */
   byItem: Map<string, Edge[]>;
+  /** The parent work item of each item (GitLab IDs; its first placement under a work item, not
+   * under a milestone). */
+  parents: Map<string, string>;
   counts: WeakMap<GanttTask, number>;
 }
 
@@ -106,14 +109,16 @@ export interface DependencyIndex {
 export function dependencyIndex(tree: GanttTask[], includeClosed: boolean): DependencyIndex {
   const nodes = new Map<string, GanttTask>();
   const paths = new Map<string, string>();
-  const visit = (list: GanttTask[], path: string) =>
+  const parents = new Map<string, string>();
+  const visit = (list: GanttTask[], path: string, parent?: GanttTask) =>
     list.forEach((node) => {
       const id = gitlabId(node.id);
       if (!nodes.has(id)) {
         nodes.set(id, node);
         paths.set(id, path);
       }
-      if (node.children) visit(node.children, path ? `${path} › ${node.name}` : node.name);
+      if (parent && parent.type !== 'milestone' && !parents.has(id)) parents.set(id, gitlabId(parent.id));
+      if (node.children) visit(node.children, path ? `${path} › ${node.name}` : node.name, node);
     });
   visit(tree, '');
 
@@ -139,7 +144,7 @@ export function dependencyIndex(tree: GanttTask[], includeClosed: boolean): Depe
     node.blockedBy?.forEach((ref) => shown(ref) && add(ref.id, id));
     node.blocking?.forEach((ref) => shown(ref) && add(id, ref.id));
   }
-  return { edges, nodes, paths, externals, byItem, counts: new WeakMap() };
+  return { edges, nodes, paths, externals, byItem, parents, counts: new WeakMap() };
 }
 
 /** The GitLab IDs of a row and its descendants. */
@@ -203,6 +208,7 @@ export interface DependencyRowInfo {
   external: boolean;
   path?: string;
   critical?: boolean; // on the critical path
+  criticalVia?: string; // how the critical path reaches it through epics: "after US 10 (through F4 → F1)"
   context?: boolean; // a parent shown for its place, without a link of its own
 }
 
@@ -211,6 +217,7 @@ export interface DependencyLink {
   to: string;
   conflict: boolean;
   critical?: boolean; // between two items of the critical path
+  derived?: boolean; // a step of the critical path through epics, without a GitLab link of its own
 }
 
 export interface DependencySubgraph {
@@ -220,60 +227,85 @@ export interface DependencySubgraph {
   critical: number;
 }
 
-/** The critical path: the chain of open links that sets the latest end. It ends at the open
- * held-up item of the row's subtree that ends latest (ties: the longer chain, then the earliest
- * start, then the row order) and walks back through each item's driving blocker: the open
- * blocker that ends latest among its own and those of its ancestors (`parents`: GitLab ID → its
- * parent's, within the row's subtree), since a blocked epic holds up its children; its own win
- * ties. A step through an ancestor puts it on the path, between the blocker and the item. An item
- * the subtree blocks elsewhere (`linked`) doesn't hold the row up: it never ends the path. Closed
- * items and made-up due dates don't count. Row IDs, blocker first; empty when nothing open of the
- * subtree is held up. */
-export function criticalPath(rows: Row[], links: DependencyLink[], parents = new Map<string, string>()): string[] {
-  const tasks = new Map(rows.map((row) => [row.node.id, row.node]));
-  const counts = (task: GanttTask | undefined): task is GanttTask => !!task && !task.closed && !task.noDueDate;
-  const into = new Map<string, DependencyLink[]>();
-  for (const link of links) into.set(link.to, [...(into.get(link.to) ?? []), link]);
-  // The driving blocker of each held-up item, and the item it blocks: itself or an ancestor.
-  const driving = new Map<string, { blocker: GanttTask; via: string }>();
-  for (const row of rows) {
-    const id = row.node.id;
-    if (!counts(row.node)) continue;
-    const seen = new Set<string>();
-    for (let at: string | undefined = id; at !== undefined && !seen.has(at); at = parents.get(at)) {
-      seen.add(at);
-      for (const link of into.get(at) ?? []) {
-        const blocker = tasks.get(link.from);
-        if (!counts(blocker) || blocker.id === id) continue;
-        const current = driving.get(id);
-        if (!current || blocker.end > current.blocker.end) driving.set(id, { blocker, via: at });
-      }
+/** A step of the critical path: `from` holds `to` up through the GitLab link `edge`, between
+ * them (`direct`) or between epics holding them. */
+export interface CriticalStep {
+  from: string;
+  to: string;
+  edge: Edge;
+  direct: boolean;
+}
+
+/** The critical path of an item, on the real work: its leaves (items without children: user
+ * stories, or epics without any). It ends at the open leaf of the item that ends latest (ties:
+ * the longer chain, then the earliest start, then the ID), blocked or not, and walks back through
+ * each leaf's driving blocker: among the links into the leaf **or into one of its ancestors** (a
+ * blocked epic holds up its user stories), the blocker's leaf that ends latest (a blocking epic is
+ * done when its user stories are; an item outside the group counts as itself); the leaf's own
+ * links win ties. Closed leaves and made-up due dates don't count. GitLab IDs, first leaf first,
+ * and the steps between them; empty when the item has no open leaf. */
+export function criticalPath(index: DependencyIndex, root: GanttTask): { ids: string[]; steps: CriticalStep[] } {
+  const counts = (task: GanttTask) => !task.closed && !task.noDueDate;
+  const leaves = new Map<string, GanttTask[]>();
+  const leavesOf = (id: string): GanttTask[] => {
+    let found = leaves.get(id);
+    if (found) return found;
+    const node = index.nodes.get(id);
+    if (node) {
+      const byId = new Map<string, GanttTask>();
+      const visit = (task: GanttTask) => {
+        if (task.children?.length) task.children.forEach(visit);
+        else if (task.type !== 'milestone' && counts(task)) byId.set(gitlabId(task.id), { ...task, id: gitlabId(task.id), children: undefined });
+      };
+      visit(node);
+      found = [...byId.values()];
+    } else {
+      const ref = index.externals.get(id);
+      found = ref && !ref.closed && !ref.noDueDate ? [externalTask(ref)] : [];
     }
-  }
-  const walk = (id: string): string[] => {
-    const path = [id];
-    const seen = new Set(path);
-    for (let step = driving.get(id); step && !seen.has(step.blocker.id); step = driving.get(step.blocker.id)) {
-      if (!seen.has(step.via)) {
-        path.unshift(step.via);
-        seen.add(step.via);
-      }
-      path.unshift(step.blocker.id);
-      seen.add(step.blocker.id);
-    }
-    return path;
+    leaves.set(id, found);
+    return found;
   };
 
-  const ends = rows.filter((row) => !row.dependency?.linked && driving.has(row.node.id)).map((row) => row.node);
+  const drivers = new Map<string, { leaf: GanttTask; edge: Edge } | undefined>();
+  const driver = (leaf: GanttTask) => {
+    if (drivers.has(leaf.id)) return drivers.get(leaf.id);
+    let best: { leaf: GanttTask; edge: Edge } | undefined;
+    const seen = new Set<string>();
+    for (let at: string | undefined = leaf.id; at !== undefined && !seen.has(at); at = index.parents.get(at)) {
+      seen.add(at);
+      for (const edge of index.byItem.get(at) ?? []) {
+        if (edge.blocked !== at) continue;
+        for (const candidate of leavesOf(edge.blocker)) {
+          if (candidate.id !== leaf.id && (!best || candidate.end > best.leaf.end)) best = { leaf: candidate, edge };
+        }
+      }
+    }
+    drivers.set(leaf.id, best);
+    return best;
+  };
+  const walk = (end: GanttTask) => {
+    const ids = [end.id];
+    const steps: CriticalStep[] = [];
+    const seen = new Set(ids);
+    for (let leaf = end, step = driver(end); step && !seen.has(step.leaf.id); leaf = step.leaf, step = driver(leaf)) {
+      const direct = step.edge.blocker === step.leaf.id && step.edge.blocked === leaf.id;
+      steps.unshift({ from: step.leaf.id, to: leaf.id, edge: step.edge, direct });
+      ids.unshift(step.leaf.id);
+      seen.add(step.leaf.id);
+    }
+    return { ids, steps };
+  };
+
+  const ends = leavesOf(gitlabId(root.id));
   const latest = ends.reduce((end, task) => (task.end > end ? task.end : end), '');
-  let best: string[] = [];
-  for (const task of ends) {
-    if (task.end !== latest) continue;
-    const path = walk(task.id);
-    const start = (ids: string[]) => tasks.get(ids[0])!.start;
-    if (path.length > best.length || (path.length === best.length && start(path) < start(best))) best = path;
+  let best: { ids: string[]; steps: CriticalStep[]; start: string } = { ids: [], steps: [], start: '' };
+  for (const end of ends.filter((task) => task.end === latest).sort((a, b) => a.id.localeCompare(b.id))) {
+    const path = walk(end);
+    const start = (index.nodes.get(path.ids[0]) ?? leavesOf(path.ids[0])[0] ?? end).start;
+    if (path.ids.length > best.ids.length || (path.ids.length === best.ids.length && start < best.start)) best = { ...path, start };
   }
-  return best;
+  return { ids: best.ids, steps: best.steps };
 }
 
 export const ARROW_GAP = 10; // px, horizontal run out of a bar and into the next
@@ -316,20 +348,25 @@ function externalTask(ref: DependencyRef): GanttTask {
 export function dependencySubgraph(index: DependencyIndex, node: GanttTask): DependencySubgraph {
   const full = fullNode(index, node);
   const { ids, edges } = requiredEdges(index, full);
+  if (edges.length === 0) return { rows: [], links: [], critical: 0 };
 
   const tasks = new Map<string, { task: GanttTask; info: DependencyRowInfo }>();
+  const add = (id: string) => {
+    if (tasks.has(id)) return;
+    const item = index.nodes.get(id);
+    const task = item ? { ...item, id, children: undefined } : externalTask(index.externals.get(id)!);
+    tasks.set(id, {
+      task,
+      info: { linked: !ids.has(id), external: !item, path: item ? index.paths.get(id) || undefined : undefined },
+    });
+  };
   for (const edge of edges) {
-    for (const id of [edge.blocker, edge.blocked]) {
-      if (tasks.has(id)) continue;
-      const item = index.nodes.get(id);
-      const inside = ids.has(id);
-      const task = item ? { ...item, id, children: undefined } : externalTask(index.externals.get(id)!);
-      tasks.set(id, {
-        task,
-        info: { linked: !inside, external: !item, path: item ? index.paths.get(id) || undefined : undefined },
-      });
-    }
+    add(edge.blocker);
+    add(edge.blocked);
   }
+  // The leaves of the critical path are shown, even those without a link of their own.
+  const critical = criticalPath(index, full);
+  critical.ids.forEach(add);
 
   // Kahn's algorithm: among the items whose blockers are all placed, the earliest first.
   const blockers = new Map<string, number>();
@@ -414,9 +451,18 @@ export function dependencySubgraph(index: DependencyIndex, node: GanttTask): Dep
     return { from: edge.blocker, to: edge.blocked, conflict: conflictBetween(blocker, blocked) !== undefined };
   });
 
-  const critical = criticalPath(rows, links, new Map([...parents].map(([id, parent]) => [id, gitlabId(parent.id)])));
-  const steps = new Set(critical.slice(1).map((id, step) => `${critical[step]} ${id}`));
-  critical.forEach((id) => (tasks.get(id)!.info.critical = true));
-  links.forEach((link) => steps.has(`${link.from} ${link.to}`) && (link.critical = true));
-  return { rows, links, critical: critical.length };
+  critical.ids.forEach((id) => (tasks.get(id)!.info.critical = true));
+  const name = (id: string) => index.nodes.get(id)?.name ?? index.externals.get(id)?.name ?? id;
+  for (const step of critical.steps) {
+    if (step.direct) {
+      links.find((link) => link.from === step.from && link.to === step.to)!.critical = true;
+      continue;
+    }
+    // Through epics: a link of its own, dashed.
+    const from = tasks.get(step.from)!.task;
+    const to = tasks.get(step.to)!;
+    links.push({ from: step.from, to: step.to, conflict: conflictBetween(from, to.task) !== undefined, critical: true, derived: true });
+    to.info.criticalVia = `after ${from.name} (through ${name(step.edge.blocker)} → ${name(step.edge.blocked)})`;
+  }
+  return { rows, links, critical: critical.ids.length };
 }
