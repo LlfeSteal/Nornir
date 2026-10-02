@@ -28,8 +28,9 @@ interface Props {
   viewMode: ViewMode;
   /** The period shown (bars are cut at its edges), or null for every date. */
   range: DateRange | null;
-  /** The dependencies dialog: its flat rows (instead of the tree's) and the arrows between them. */
-  dependencies?: { rows: Row[]; links: DependencyLink[] };
+  /** The dependencies dialog: its flat rows (instead of the tree's), the arrows between them and
+   * the length of the critical path (the rest is dimmed when there is one). */
+  dependencies?: { rows: Row[]; links: DependencyLink[]; critical: number };
   /** Fixed room for the chart (the dialog), instead of the room left in the page. */
   height?: number;
 }
@@ -199,7 +200,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
   const bodyHeight = rows.length * ROW_HEIGHT;
 
   return (
-    <div ref={chartRef} className="gantt-chart card">
+    <div ref={chartRef} className="gantt-chart card" data-critical-path={dependencies?.critical ? 'true' : undefined}>
       <div className="gantt-scroll" ref={scrollRef} onScroll={onScroll} style={{ maxHeight }}>
         <div className="gantt-canvas" style={{ width: LIST_WIDTH + timeline.width, height: HEADER_HEIGHT + bodyHeight }}>
           <div className="gantt-header" style={{ height: HEADER_HEIGHT }}>
@@ -349,6 +350,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       data-health={health}
       data-overrun={past ? 'true' : undefined}
       data-conflict={blocked ? 'true' : undefined}
+      data-critical={row.dependency?.critical ? 'true' : undefined}
       data-linked={row.dependency?.linked ? 'true' : undefined}
       data-external={row.dependency?.external ? 'true' : undefined}
       style={{ left, width }}
@@ -393,7 +395,7 @@ function DependencyLinks({
 }) {
   const marker = useId().replace(/:/g, ''); // React's ":r1:" breaks url(#…) references
   const indexes = useMemo(() => new Map(rows.map((row, index) => [row.node.id, index])), [rows]);
-  const paths: { key: string; d: string; conflict: boolean; markerId: string }[] = [];
+  const paths: { key: string; d: string; conflict: boolean; critical: boolean; markerId: string }[] = [];
   for (const link of links) {
     const from = indexes.get(link.from);
     const to = indexes.get(link.to);
@@ -412,12 +414,15 @@ function DependencyLinks({
       const y = (to > from ? to : from) * ROW_HEIGHT;
       d = `M${x1},${y1} h${ARROW_GAP} V${y} H${x2 - ARROW_GAP} V${y2} H${x2}`;
     }
-    paths.push({ key: `${link.from} ${link.to}`, d, conflict: link.conflict, markerId: `${marker}${link.conflict ? 'c' : 'n'}` });
+    const kind = link.conflict ? 'c' : link.critical ? 'k' : 'n';
+    paths.push({ key: `${link.from} ${link.to}`, d, conflict: link.conflict, critical: !!link.critical, markerId: `${marker}${kind}` });
   }
+  // The critical path on top.
+  paths.sort((a, b) => Number(a.critical) - Number(b.critical));
   return (
     <svg className="dependency-links" width={timeline.width} height={height} style={{ left: LIST_WIDTH }} aria-hidden="true">
       <defs>
-        {(['n', 'c'] as const).map((kind) => (
+        {(['n', 'c', 'k'] as const).map((kind) => (
           <marker
             key={kind}
             id={`${marker}${kind}`}
@@ -427,7 +432,7 @@ function DependencyLinks({
             markerWidth="8"
             markerHeight="8"
             orient="auto"
-            className={kind === 'c' ? 'conflict' : undefined}
+            className={kind === 'c' ? 'conflict' : kind === 'k' ? 'critical' : undefined}
           >
             <path d="M0,0 L8,4 L0,8 z" />
           </marker>
@@ -438,6 +443,7 @@ function DependencyLinks({
           key={path.key}
           d={path.d}
           data-conflict={path.conflict ? 'true' : undefined}
+          data-critical={path.critical ? 'true' : undefined}
           markerEnd={`url(#${path.markerId})`}
         />
       ))}

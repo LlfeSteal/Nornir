@@ -64,6 +64,7 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
           <h2 id={titleId}>Dependencies of {node.name}</h2>
           <p>
             {links} {links === 1 ? 'link' : 'links'} · {graph.rows.length} items
+            {graph.critical > 0 && ` · critical path of ${graph.critical}`}
           </p>
         </div>
         <SegmentedControl label="Time scale" options={VIEW_MODES} value={viewMode} onChange={setViewMode} />
@@ -73,6 +74,12 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
       </header>
       {open && <GanttChart data={data} viewMode={viewMode} range={null} dependencies={graph} height={height} />}
       <div className="legend" aria-label="Dependencies legend">
+        {graph.critical > 0 && (
+          <span className="legend-item">
+            <span className="legend-arrow critical" />
+            Critical path
+          </span>
+        )}
         <span className="legend-item">
           <span className="legend-arrow" />
           Blocks

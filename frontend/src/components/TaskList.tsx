@@ -59,6 +59,7 @@ export const TaskListRow: React.FC<{
       data-blocked={blocked ? 'true' : undefined}
       data-linked={linked ? 'true' : undefined}
       data-external={row.dependency?.external ? 'true' : undefined}
+      data-critical={row.dependency?.critical ? 'true' : undefined}
     >
       <div className="task-list-cell" title={node.name}>
         {row.guides.map((line, level) => (
@@ -155,6 +156,7 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
       </p>
       <p>{progress}% complete</p>
       {row.dependency?.linked && <p className="dependency-place">{dependencyPlace(row)}</p>}
+      {row.dependency?.critical && <p className="critical-note">On the critical path</p>}
       {closed && (
         <p className="schedule" data-status="closed">
           <strong>Closed</strong>

@@ -5,6 +5,8 @@ import {
   blockedSpan,
   blockerConflicts,
   conflictMessage,
+  criticalPath,
+  DependencyLink,
   dependencyCount,
   dependencyIndex,
   dependencySubgraph,
@@ -157,21 +159,23 @@ describe('dependencyCount', () => {
 describe('dependencySubgraph', () => {
   it('lists the items of a milestone and their blockers from elsewhere, blockers first', () => {
     const index = dependencyIndex(tree(), false);
-    const { rows, links } = dependencySubgraph(index, tree()[0]);
+    const { rows, links, critical } = dependencySubgraph(index, tree()[0]);
     expect(rows.map((row) => [row.node.id, row.dependency])).toEqual([
       ['ext', { linked: true, external: true, path: undefined }],
       ['A', { linked: false, external: false, path: 'm1' }],
-      ['X', { linked: true, external: false, path: 'm2' }],
-      ['C', { linked: false, external: false, path: 'm1' }],
+      ['X', { linked: true, external: false, path: 'm2', critical: true }],
+      ['C', { linked: false, external: false, path: 'm1', critical: true }],
       ['B', { linked: false, external: false, path: 'm1' }],
     ]);
     // Flat rows: no chevrons in the dialog.
     expect(rows.every((row) => !row.hasChildren && !row.node.children && row.depth === 0)).toBe(true);
     expect(links).toEqual([
       { from: 'A', to: 'B', conflict: false },
-      { from: 'X', to: 'C', conflict: true }, // C starts on the 5th, X ends on the 15th
+      { from: 'X', to: 'C', conflict: true, critical: true }, // C starts on the 5th, X ends on the 15th
       { from: 'ext', to: 'C', conflict: true },
     ]);
+    // C ends last; X, which ends after ext, holds it up.
+    expect(critical).toBe(2);
   });
 
   it("shows an epic's own links, the other end linked", () => {
@@ -191,5 +195,51 @@ describe('dependencySubgraph', () => {
     const { rows, links } = dependencySubgraph(index, root);
     expect(rows.map((row) => row.node.id)).toEqual(['b', 'a']);
     expect(links).toHaveLength(2);
+  });
+});
+
+describe('criticalPath', () => {
+  const rowsOf = (...tasks: GanttTask[]) => tasks.map((node) => ({ node, hasChildren: false, depth: 0, isLast: false, guides: [] }));
+  const link = (from: string, to: string): DependencyLink => ({ from, to, conflict: false });
+
+  it('ends at the blocked item that ends last and walks back through the blocker ending last', () => {
+    const rows = rowsOf(
+      task('a', { end: '2026-10-05' }),
+      task('b', { end: '2026-10-09' }),
+      task('c', { end: '2026-10-20' }),
+      task('d', { end: '2026-10-30' }),
+      task('e', { end: '2026-10-25' }),
+    );
+    // a → c, b → c, c → d; e blocks nothing and isn't blocked.
+    expect(criticalPath(rows, [link('a', 'c'), link('b', 'c'), link('c', 'd')])).toEqual(['b', 'c', 'd']);
+  });
+
+  it('prefers the longer chain between items ending together, then the earliest start', () => {
+    const rows = rowsOf(
+      task('a', { start: '2026-10-01', end: '2026-10-05' }),
+      task('b', { start: '2026-10-06', end: '2026-10-10' }),
+      task('c', { start: '2026-10-11', end: '2026-10-30' }),
+      task('x', { start: '2026-10-02', end: '2026-10-08' }),
+      task('y', { start: '2026-10-09', end: '2026-10-30' }),
+    );
+    expect(criticalPath(rows, [link('x', 'y'), link('a', 'b'), link('b', 'c')])).toEqual(['a', 'b', 'c']);
+    expect(criticalPath(rows, [link('x', 'y'), link('b', 'c')])).toEqual(['x', 'y']);
+  });
+
+  it("skips closed items and made-up due dates", () => {
+    const rows = rowsOf(
+      task('a', { end: '2026-10-12' }),
+      task('b', { end: '2026-10-15', closed: true }),
+      task('c', { end: '2026-10-14', noDueDate: true }),
+      task('d', { end: '2026-10-30' }),
+    );
+    expect(criticalPath(rows, [link('a', 'd'), link('b', 'd'), link('c', 'd')])).toEqual(['a', 'd']);
+    expect(criticalPath(rows, [link('b', 'd'), link('c', 'd')])).toEqual([]);
+  });
+
+  it('is empty without links and survives a cycle', () => {
+    expect(criticalPath(rowsOf(task('a')), [])).toEqual([]);
+    const rows = rowsOf(task('a', { end: '2026-10-10' }), task('b', { end: '2026-10-12' }));
+    expect(criticalPath(rows, [link('a', 'b'), link('b', 'a')])).toEqual(['a', 'b']);
   });
 });

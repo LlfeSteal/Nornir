@@ -148,3 +148,49 @@ test('arrows stay visible in dark mode', async ({ page }) => {
   await expect(arrow).toHaveCSS('stroke', 'rgb(152, 152, 157)');
   await expect(dialog(page).locator('.dependency-links > path[data-conflict]').first()).toHaveCSS('stroke', 'rgb(255, 69, 58)');
 });
+
+test('the dialog brings the critical path forward and dims the rest', async ({ page }) => {
+  await listRow(page, '[Milestone] 1.0').getByRole('button', { name: 'View 3 dependencies' }).click();
+  const sheet = dialog(page);
+  // Checkout ends last; of its blockers, Shipping rules ends after Vendor SDK.
+  await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('3 links · 5 items · critical path of 2');
+  const critical = sheet.locator('.task-list-row[data-critical]');
+  await expect(critical).toHaveCount(2);
+  expect(await critical.locator('.task-list-cell').evaluateAll((cells) => cells.map((c) => c.getAttribute('title')))).toEqual([
+    'Shipping rules',
+    'Checkout',
+  ]);
+  await expect(listRow(page, 'Checkout', sheet).locator('.task-list-name')).toHaveCSS('font-weight', '600');
+
+  // Its bars at full strength, the others faded.
+  const barOf = (name: string) => sheet.locator('.bar', { has: page.locator('.bar-label', { hasText: new RegExp(`^${name}$`) }) });
+  await expect(barOf('Checkout')).toHaveAttribute('data-critical', 'true');
+  await expect(barOf('Checkout')).toHaveCSS('opacity', '1');
+  await expect(barOf('Billing')).not.toHaveAttribute('data-critical');
+  await expect(barOf('Billing')).toHaveCSS('opacity', '0.35');
+
+  // One critical arrow, thicker; it starts before its blocker ends, so it stays red.
+  const arrow = sheet.locator('.dependency-links > path[data-critical]');
+  await expect(arrow).toHaveCount(1);
+  await expect(arrow).toHaveAttribute('data-conflict', 'true');
+  await expect(arrow).toHaveCSS('stroke-width', '2px');
+  await expect(arrow).toHaveCSS('opacity', '1');
+  await expect(sheet.locator('.dependency-links > path:not([data-critical])').first()).toHaveCSS('opacity', '0.35');
+
+  // The tooltip says it.
+  const label = (await barOf('Checkout').locator('.bar-label').boundingBox())!;
+  await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
+  await expect(page.locator('.gantt-tooltip .critical-note')).toHaveText('On the critical path');
+
+  // The legend's critical arrow is the strongest neutral, in both appearances.
+  const legendArrow = sheet.getByLabel('Dependencies legend').locator('.legend-arrow.critical');
+  await expect(sheet.getByLabel('Dependencies legend')).toContainText('Critical path');
+  await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(29, 29, 31)');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(245, 245, 247)');
+});
+
+test('the main chart dims nothing', async ({ page }) => {
+  await expect(page.locator('.gantt-chart[data-critical-path]')).toHaveCount(0);
+  await expect(page.locator('main .bar').first()).toHaveCSS('opacity', '1');
+});

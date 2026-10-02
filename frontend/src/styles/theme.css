@@ -46,6 +46,7 @@
   --blocked: var(--red); /* an item with an open blocker (stroked sign, not the filled octagon) */
   --dependency: #8e8e93; /* arrows of the dependencies dialog */
   --dependency-conflict: var(--red); /* an arrow to an item starting before its blocker ends */
+  --critical: var(--text); /* the critical path: the strongest neutral, no hue of its own */
   --milestone-band: rgba(175, 82, 222, 0.1);
   --epic-band: rgba(0, 122, 255, 0.1);
   --issue-band: rgba(48, 176, 199, 0.1);
@@ -185,6 +186,8 @@ button { font: inherit; color: inherit; }
 }
 .legend-arrow.conflict { border-top-color: var(--dependency-conflict); }
 .legend-arrow.conflict::after { border-left-color: var(--dependency-conflict); }
+.legend-arrow.critical { border-top: 2px solid var(--critical); }
+.legend-arrow.critical::after { top: -5px; border-left-color: var(--critical); }
 .legend-swatch.closed { background: repeating-linear-gradient(45deg, var(--closed-bg) 0 2px, var(--closed-stroke) 2px 4px); }
 
 .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
@@ -436,6 +439,17 @@ button { font: inherit; color: inherit; }
 .dependency-links path[data-conflict] { stroke: var(--dependency-conflict); }
 .dependency-links marker path { fill: var(--dependency); stroke: none; }
 .dependency-links marker.conflict path { fill: var(--dependency-conflict); }
+/* The critical path: its arrows in the strongest neutral (red when they conflict), the rest
+   of the dialog dimmed. No outline, no badge: contrast is enough. */
+.dependency-links path[data-critical] { stroke: var(--critical); stroke-width: 2; }
+.dependency-links path[data-critical][data-conflict] { stroke: var(--dependency-conflict); }
+.dependency-links marker.critical path { fill: var(--critical); }
+[data-critical-path] .bar, [data-critical-path] .dependency-links > path { transition: opacity 0.2s var(--ease), filter 0.15s var(--ease); }
+[data-critical-path] .bar:not([data-critical]), [data-critical-path] .dependency-links > path:not([data-critical]) { opacity: 0.35; }
+[data-critical-path] .bar:not([data-critical]):hover { opacity: 1; }
+[data-critical-path] .task-list-row:not([data-critical]) .task-list-name { color: var(--text-secondary); }
+[data-critical-path] .task-list-row[data-critical] .task-list-name { color: var(--text); font-weight: 600; }
+.gantt-tooltip .critical-note { font-weight: 600; }
 
 /* Dependencies dialog: a modal sheet */
 .dependency-dialog {

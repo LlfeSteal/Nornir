@@ -5,7 +5,8 @@ import { parseDay } from './timeline';
 
 // GitLab "blocked by" / "blocks" links. In the chart: a mark on blocked rows and a red hatch on
 // the part of a bar planned before its blocker ends. A row whose subtree holds links opens them in a
-// dialog: a flat chart of the items involved, with arrows from each blocker to what it blocks.
+// dialog: a flat chart of the items involved, with arrows from each blocker to what it blocks and
+// the critical path brought forward.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -179,17 +180,59 @@ export interface DependencyRowInfo {
   linked: boolean;
   external: boolean;
   path?: string;
+  critical?: boolean; // on the critical path
 }
 
 export interface DependencyLink {
   from: string; // row IDs (GitLab IDs)
   to: string;
   conflict: boolean;
+  critical?: boolean; // between two items of the critical path
 }
 
 export interface DependencySubgraph {
   rows: Row[];
   links: DependencyLink[];
+  /** How many items the critical path holds, 0 without one. */
+  critical: number;
+}
+
+/** The critical path: the chain of open links that sets the latest end. It ends at the open
+ * blocked item that ends latest (ties: the longer chain, then the earliest start, then the row
+ * order) and walks back through each item's driving blocker, the open blocker that ends latest.
+ * Closed items and made-up due dates don't count. Row IDs, blocker first; empty when nothing
+ * open is blocked. */
+export function criticalPath(rows: Row[], links: DependencyLink[]): string[] {
+  const tasks = new Map(rows.map((row) => [row.node.id, row.node]));
+  const counts = (task: GanttTask | undefined): task is GanttTask => !!task && !task.closed && !task.noDueDate;
+  // The driving blocker of each blocked item.
+  const driving = new Map<string, GanttTask>();
+  for (const link of links) {
+    const blocker = tasks.get(link.from);
+    if (!counts(blocker) || !counts(tasks.get(link.to))) continue;
+    const current = driving.get(link.to);
+    if (!current || blocker.end > current.end) driving.set(link.to, blocker);
+  }
+  const walk = (id: string): string[] => {
+    const path = [id];
+    const seen = new Set(path);
+    for (let blocker = driving.get(id); blocker && !seen.has(blocker.id); blocker = driving.get(blocker.id)) {
+      path.unshift(blocker.id);
+      seen.add(blocker.id);
+    }
+    return path;
+  };
+
+  const ends = rows.filter((row) => driving.has(row.node.id)).map((row) => row.node);
+  const latest = ends.reduce((end, task) => (task.end > end ? task.end : end), '');
+  let best: string[] = [];
+  for (const task of ends) {
+    if (task.end !== latest) continue;
+    const path = walk(task.id);
+    const start = (ids: string[]) => tasks.get(ids[0])!.start;
+    if (path.length > best.length || (path.length === best.length && start(path) < start(best))) best = path;
+  }
+  return best;
 }
 
 function externalTask(ref: DependencyRef): GanttTask {
@@ -259,10 +302,15 @@ export function dependencySubgraph(index: DependencyIndex, node: GanttTask): Dep
     const { task, info } = tasks.get(id)!;
     return { node: task, hasChildren: false, depth: 0, isLast: false, guides: [], dependency: info };
   });
-  const links = edges.map((edge) => {
+  const links: DependencyLink[] = edges.map((edge) => {
     const blocker = tasks.get(edge.blocker)!.task;
     const blocked = tasks.get(edge.blocked)!.task;
     return { from: edge.blocker, to: edge.blocked, conflict: conflictBetween(blocker, blocked) !== undefined };
   });
-  return { rows, links };
+
+  const critical = criticalPath(rows, links);
+  const steps = new Set(critical.slice(1).map((id, step) => `${critical[step]} ${id}`));
+  critical.forEach((id) => (tasks.get(id)!.info.critical = true));
+  links.forEach((link) => steps.has(`${link.from} ${link.to}`) && (link.critical = true));
+  return { rows, links, critical: critical.length };
 }
