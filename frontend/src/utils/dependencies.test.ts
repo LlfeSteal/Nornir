@@ -136,13 +136,14 @@ describe('dependencyIndex', () => {
 });
 
 describe('dependencyCount', () => {
-  it('counts the links of a row and its descendants', () => {
+  it('counts the links needed to finish a row, not what it unblocks', () => {
     const data = tree();
     const index = dependencyIndex(data, false);
     const [m1, m2, copy] = data;
     expect(dependencyCount(index, m1)).toBe(3);
-    expect(dependencyCount(index, m2)).toBe(1);
-    expect(dependencyCount(index, m1.children![0])).toBe(1); // A
+    expect(dependencyCount(index, m2)).toBe(0); // X only blocks C, in m1
+    expect(dependencyCount(index, m1.children![0])).toBe(0); // A only blocks B
+    expect(dependencyCount(index, m1.children![1])).toBe(1); // B, blocked by A
     expect(dependencyCount(index, copy)).toBe(2); // C, from its copy
     expect(dependencyCount(index, m1.children![2].children![0])).toBe(0); // c1
   });
@@ -178,16 +179,27 @@ describe('dependencySubgraph', () => {
     expect(critical).toBe(2);
   });
 
-  it("shows an epic's own links, the other end linked", () => {
+  it('leaves out what the row only unblocks', () => {
     const index = dependencyIndex(tree(), false);
-    const { rows, critical } = dependencySubgraph(index, tree()[1]); // m2
-    expect(rows.map((row) => [row.node.id, row.dependency?.linked])).toEqual([
-      ['X', false],
-      ['C', true],
-    ]);
-    // X only blocks C, outside m2: nothing holds m2 up.
-    expect(critical).toBe(0);
-    expect(rows.some((row) => row.dependency?.critical)).toBe(false);
+    // X only blocks C, in m1: nothing is needed to finish m2.
+    expect(dependencySubgraph(index, tree()[1])).toEqual({ rows: [], links: [], critical: 0 });
+  });
+
+  it('follows the blockers from elsewhere, their descendants and their own blockers', () => {
+    // m1 holds C. X (in m2) blocks C; V blocks X; x1, child of X, is blocked by W (outside the
+    // group). C blocks Z (in m2): not needed to finish m1.
+    const x1 = task('x1', { blockedBy: [ref('W', { external: true })] });
+    const X = task('X', { blocking: [ref('C')], blockedBy: [ref('V')], children: [x1] });
+    const V = task('V', { blocking: [ref('X')] });
+    const Z = task('Z', { blockedBy: [ref('C')] });
+    const C = task('C', { blockedBy: [ref('X')], blocking: [ref('Z')] });
+    const data = [task('m1', { type: 'milestone', children: [C] }), task('m2', { type: 'milestone', children: [X, V, Z] })];
+    const index = dependencyIndex(data, false);
+    const { rows, links } = dependencySubgraph(index, data[0]);
+    expect(rows.map((row) => row.node.id).sort()).toEqual(['C', 'V', 'W', 'X', 'x1']);
+    expect(links.map((link) => `${link.from} ${link.to}`)).toEqual(['X C', 'V X', 'W x1']);
+    expect(rows.find((row) => row.node.id === 'x1')?.dependency).toMatchObject({ linked: true, path: 'm2 › X' });
+    expect(dependencyCount(index, data[0])).toBe(3);
   });
 
   it('survives a cycle', () => {

@@ -154,27 +154,49 @@ function fullNode(index: DependencyIndex, node: GanttTask): GanttTask {
   return index.nodes.get(gitlabId(node.id)) ?? node;
 }
 
-/** The links touching an item or its descendants, each once. */
-function subtreeEdges(index: DependencyIndex, node: GanttTask): { ids: Set<string>; edges: Edge[] } {
+/** The links needed to finish an item: those blocking it or its descendants, then those blocking
+ * its blockers (with their descendants), and so on — not what it unblocks. `ids`: the item's
+ * subtree. */
+function requiredEdges(index: DependencyIndex, node: GanttTask): { ids: Set<string>; edges: Edge[] } {
   const ids = subtreeIds(node);
+  const needed = new Set<string>([gitlabId(node.id)]);
   const edges = new Set<Edge>();
-  for (const id of ids) index.byItem.get(id)?.forEach((edge) => edges.add(edge));
+  // Breadth first, without recursion: blocking chains can be long.
+  const queue = [node];
+  const need = (task: GanttTask) => {
+    const id = gitlabId(task.id);
+    if (needed.has(id)) return;
+    needed.add(id);
+    queue.push(task);
+  };
+  for (let i = 0; i < queue.length; i++) {
+    const task = queue[i];
+    const id = gitlabId(task.id);
+    for (const edge of index.byItem.get(id) ?? []) {
+      if (edge.blocked !== id) continue;
+      edges.add(edge);
+      const blocker = index.nodes.get(edge.blocker);
+      if (blocker) need(blocker);
+      else needed.add(edge.blocker); // outside the group
+    }
+    task.children?.forEach(need);
+  }
   return { ids, edges: [...edges] };
 }
 
-/** How many links touch a row's item or its descendants (whatever the filters hide). */
+/** How many links are needed to finish a row's item (whatever the filters hide). */
 export function dependencyCount(index: DependencyIndex, node: GanttTask): number {
   if (index.edges.length === 0) return 0;
   const full = fullNode(index, node);
   let count = index.counts.get(full);
   if (count === undefined) {
-    count = subtreeEdges(index, full).edges.length;
+    count = requiredEdges(index, full).edges.length;
     index.counts.set(full, count);
   }
   return count;
 }
 
-/** A row of the dependencies dialog: an item of the row's subtree, or a linked item found
+/** A row of the dependencies dialog: an item of the row's subtree, or a blocker it needs found
  * elsewhere in the group (`path`) or outside it (`external`). */
 export interface DependencyRowInfo {
   linked: boolean;
@@ -252,12 +274,13 @@ function externalTask(ref: DependencyRef): GanttTask {
   };
 }
 
-/** The dependencies of a row and its descendants, as flat rows: the items of its subtree that
- * have links, then the items they're linked to elsewhere, in dependency order (a blocker
- * before what it blocks; by start date otherwise, and in a cycle). */
+/** What must be done to finish a row, as flat rows: the items of its subtree blocked by
+ * something, their blockers, the blockers' own (with their descendants'), and so on — not what
+ * the row unblocks. Only items with a link; in dependency order (a blocker before what it
+ * blocks; by start date otherwise, and in a cycle). */
 export function dependencySubgraph(index: DependencyIndex, node: GanttTask): DependencySubgraph {
   const full = fullNode(index, node);
-  const { ids, edges } = subtreeEdges(index, full);
+  const { ids, edges } = requiredEdges(index, full);
 
   const tasks = new Map<string, { task: GanttTask; info: DependencyRowInfo }>();
   for (const edge of edges) {

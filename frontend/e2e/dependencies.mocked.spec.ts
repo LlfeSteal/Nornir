@@ -77,7 +77,11 @@ test('the Blocked filter lists the blocked items', async ({ page }) => {
 
 test('rows with dependencies below them open them in a dialog', async ({ page }) => {
   await expect(listRow(page, '[Milestone] 1.0').getByRole('button', { name: 'View 3 dependencies' })).toBeVisible();
-  await expect(listRow(page, '[Milestone] 2.0').getByRole('button', { name: 'View 1 dependency' })).toBeVisible();
+  // Shipping rules (milestone 2.0) only blocks Checkout, in milestone 1.0: nothing is needed to finish them.
+  await expect(listRow(page, '[Milestone] 2.0').locator('.row-dependencies')).toHaveCount(0);
+  await expect(listRow(page, 'Shipping rules').locator('.row-dependencies')).toHaveCount(0);
+  await expect(listRow(page, 'Auth API').locator('.row-dependencies')).toHaveCount(0);
+  await expect(listRow(page, 'Billing').getByRole('button', { name: 'View 1 dependency' })).toBeVisible();
   await expect(listRow(page, 'Checkout').getByRole('button', { name: 'View 2 dependencies' })).toBeVisible();
   // Its only link is to a closed item, hidden with the closed items.
   await expect(listRow(page, 'Standalone issue').locator('.row-dependencies')).toHaveCount(0);
@@ -188,15 +192,6 @@ test('the dialog brings the critical path forward and dims the rest', async ({ p
   await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(29, 29, 31)');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(245, 245, 247)');
-});
-
-test('an item the row only blocks elsewhere is not on its critical path', async ({ page }) => {
-  // Milestone 2.0's Shipping rules blocks Checkout, in milestone 1.0: nothing holds 2.0 up.
-  await listRow(page, '[Milestone] 2.0').getByRole('button', { name: 'View 1 dependency' }).click();
-  const sheet = page.getByRole('dialog', { name: 'Dependencies of [Milestone] 2.0' });
-  await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('1 link · 2 items');
-  await expect(sheet.locator('.task-list-row[data-critical]')).toHaveCount(0);
-  await expect(sheet.locator('.gantt-chart[data-critical-path]')).toHaveCount(0);
 });
 
 test('the main chart dims nothing', async ({ page }) => {
