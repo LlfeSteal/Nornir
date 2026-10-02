@@ -641,3 +641,72 @@ func TestEpicsAndMilestonesWithoutChildrenAreFlagged(t *testing.T) {
 		}
 	}
 }
+
+func links(blockedBy, blocking []LinkedItem) WorkItemWidget {
+	return WorkItemWidget{
+		Typename:  typenameLinked,
+		Type:      "LINKED_ITEMS",
+		BlockedBy: &LinkedItemConn{Nodes: blockedBy},
+		Blocking:  &LinkedItemConn{Nodes: blocking},
+	}
+}
+
+func linked(id, state string, widgets ...WorkItemWidget) LinkedItem {
+	return LinkedItem{WorkItemState: state, WorkItem: &LinkedWorkItem{ID: id, Title: "linked " + id, WebURL: "https://x/" + id, Widgets: widgets}}
+}
+
+func TestBuildGanttTree_BlockingLinks(t *testing.T) {
+	tree := mustBuild(t, []WorkItemNode{
+		node("blocker", "Issue", "CLOSED", dates("2026-01-01", "2026-01-20")),
+		node("epic", "Epic", "OPEN", milestone("m1", "2026-01-01"),
+			links([]LinkedItem{
+				linked("blocker", "CLOSED"),
+				linked("blocker", "CLOSED"), // duplicate
+				linked("outside", "OPEN", dates("", "2026-03-01")),
+			}, []LinkedItem{linked("issue", "OPEN")})),
+		node("issue", "Issue", "OPEN", parent("epic"), links([]LinkedItem{linked("epic", "OPEN")}, nil)),
+	}, nil)
+
+	byID := map[string]model.GanttTask{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			byID[task.ID] = task
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+
+	epic := byID["epic"]
+	if len(epic.BlockedBy) != 2 {
+		t.Fatalf("epic blockedBy = %+v, want 2 links", epic.BlockedBy)
+	}
+	in := epic.BlockedBy[0]
+	// An item of the data is described from it, not from the link.
+	want := model.DependencyRef{ID: "blocker", Name: "title blocker", Start: "2026-01-01", End: "2026-01-20", Closed: true}
+	if in != want {
+		t.Errorf("internal link = %+v, want %+v", in, want)
+	}
+	out := epic.BlockedBy[1]
+	want = model.DependencyRef{ID: "outside", Name: "linked outside", WebURL: "https://x/outside", Start: "2026-02-15", End: "2026-03-01", NoStartDate: true, External: true}
+	if out != want {
+		t.Errorf("external link = %+v, want %+v", out, want)
+	}
+	if len(epic.Blocking) != 1 || epic.Blocking[0].ID != "issue" || epic.Blocking[0].External {
+		t.Errorf("epic blocking = %+v, want the internal issue", epic.Blocking)
+	}
+
+	// Every copy carries the links: the epic sits under its milestone and at the top level.
+	if copy := byID["epic_root_epic"]; len(copy.BlockedBy) != 2 || len(copy.Blocking) != 1 {
+		t.Errorf("root copy links = %+v / %+v", copy.BlockedBy, copy.Blocking)
+	}
+	if issue := byID["issue_root_epic"]; len(issue.BlockedBy) != 1 || issue.BlockedBy[0].ID != "epic" {
+		t.Errorf("issue copy blockedBy = %+v", issue.BlockedBy)
+	}
+	if ms := byID["m1"]; ms.BlockedBy != nil || ms.Blocking != nil {
+		t.Errorf("milestone has links: %+v / %+v", ms.BlockedBy, ms.Blocking)
+	}
+	if b := byID["blocker"]; b.BlockedBy != nil || b.Blocking != nil {
+		t.Errorf("item without links widget has links: %+v / %+v", b.BlockedBy, b.Blocking)
+	}
+}

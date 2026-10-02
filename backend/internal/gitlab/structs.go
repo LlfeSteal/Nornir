@@ -71,6 +71,26 @@ type WorkItemWidget struct {
 	Labels    *LabelConn `json:"labels,omitempty"`
 	// HealthStatus: "onTrack", "needsAttention" or "atRisk", nil when unset.
 	HealthStatus *string `json:"healthStatus,omitempty"`
+	// Blocking links (WorkItemWidgetLinkedItems, aliased linkedItems queries).
+	BlockedBy *LinkedItemConn `json:"blockedBy,omitempty"`
+	Blocking  *LinkedItemConn `json:"blocking,omitempty"`
+}
+
+type LinkedItemConn struct {
+	Nodes []LinkedItem `json:"nodes"`
+}
+
+// LinkedItem is the other end of a blocking link; it may be outside the group.
+type LinkedItem struct {
+	WorkItemState string          `json:"workItemState"` // "OPEN" or "CLOSED"
+	WorkItem      *LinkedWorkItem `json:"workItem"`
+}
+
+type LinkedWorkItem struct {
+	ID      string           `json:"id"`
+	Title   string           `json:"title"`
+	WebURL  string           `json:"webUrl"`
+	Widgets []WorkItemWidget `json:"widgets"`
 }
 
 type Milestone struct {

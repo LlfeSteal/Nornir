@@ -18,6 +18,7 @@ const (
 	typenameWeight    = "WorkItemWidgetWeight"
 	typenameLabels    = "WorkItemWidgetLabels"
 	typenameHealth    = "WorkItemWidgetHealthStatus"
+	typenameLinked    = "WorkItemWidgetLinkedItems"
 
 	// defaultWeight is the weight of an item without a GitLab weight.
 	defaultWeight = 1
@@ -37,6 +38,7 @@ type parsedItem struct {
 	weight            int // GitLab weight, defaultWeight when unset
 	hierarchyParentID string
 	milestoneKey      string // see milestoneKey()
+	widgets           []WorkItemWidget
 }
 
 // BuildGanttTree builds the Gantt tree in two phases:
@@ -49,6 +51,8 @@ type parsedItem struct {
 //     gets the `_ms_<id>` suffix if the item is also placed under a hierarchy parent;
 //   - neither → root;
 //   - every epic that is not already a root also gets a top-level copy (`_root_<id>`).
+//
+// Every row of a work item carries its blocking links (see extractLinks).
 //
 // Milestones are matched by title: milestones sharing a title (e.g. the same sprint in
 // several projects) make a single row. All groupMilestones are shown, even with no
@@ -113,6 +117,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 			closed:            node.State == "CLOSED",
 			weight:            extractWeight(node.Widgets),
 			hierarchyParentID: extractHierarchyParentID(node.Widgets),
+			widgets:           node.Widgets,
 		}
 
 		item.task.LinearProgress = linearProgress(start, end, now)
@@ -125,6 +130,12 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 
 		items[node.ID] = item
 		order = append(order, node.ID)
+	}
+
+	// Phase 1a': blocking links, once every item is known (to tell external ones apart).
+	for _, id := range order {
+		item := items[id]
+		item.task.BlockedBy, item.task.Blocking = extractLinks(item.widgets, items, now)
 	}
 
 	// Phase 1b: child lists, in API order.
@@ -373,6 +384,53 @@ func extractHealth(widgets []WorkItemWidget) string {
 		}
 	}
 	return ""
+}
+
+// extractLinks returns the "blocked by" and "blocks" links of an item, in API order and
+// without duplicates. A linked item in the data is described from it (same name, dates and
+// state as its rows); any other is External and described from the link itself.
+func extractLinks(widgets []WorkItemWidget, items map[string]*parsedItem, now time.Time) (blockedBy, blocking []model.DependencyRef) {
+	refs := func(conn *LinkedItemConn, out []model.DependencyRef) []model.DependencyRef {
+		if conn == nil {
+			return out
+		}
+		for _, link := range conn.Nodes {
+			if link.WorkItem == nil || link.WorkItem.ID == "" || containsRef(out, link.WorkItem.ID) {
+				continue
+			}
+			if item, ok := items[link.WorkItem.ID]; ok {
+				out = append(out, model.DependencyRef{
+					ID: item.task.ID, Name: item.task.Name, WebURL: item.task.WebURL,
+					Start: item.task.Start, End: item.task.End, Closed: item.closed,
+					NoStartDate: item.task.NoStartDate, NoDueDate: item.task.NoDueDate,
+				})
+				continue
+			}
+			start, end, noStart, noDue := extractDates(link.WorkItem.Widgets, now)
+			out = append(out, model.DependencyRef{
+				ID: link.WorkItem.ID, Name: link.WorkItem.Title, WebURL: link.WorkItem.WebURL,
+				Start: start, End: end, Closed: link.WorkItemState == "CLOSED",
+				NoStartDate: noStart, NoDueDate: noDue, External: true,
+			})
+		}
+		return out
+	}
+	for _, w := range widgets {
+		if w.Typename == typenameLinked {
+			blockedBy = refs(w.BlockedBy, blockedBy)
+			blocking = refs(w.Blocking, blocking)
+		}
+	}
+	return blockedBy, blocking
+}
+
+func containsRef(refs []model.DependencyRef, id string) bool {
+	for _, r := range refs {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func extractHierarchyParentID(widgets []WorkItemWidget) string {

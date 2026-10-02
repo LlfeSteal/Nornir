@@ -38,9 +38,20 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
           ... on WorkItemWidgetWeight { weight }
           ... on WorkItemWidgetLabels { labels { nodes { id title color } } }
           ... on WorkItemWidgetHealthStatus { healthStatus }
+          ... on WorkItemWidgetLinkedItems {
+            blockedBy: linkedItems(filter: BLOCKED_BY, first: 50) { ...LinkedNodes }
+            blocking: linkedItems(filter: BLOCKS, first: 50) { ...LinkedNodes }
+          }
         }
       }
     }
+  }
+}
+
+fragment LinkedNodes on LinkedWorkItemTypeConnection {
+  nodes {
+    workItemState
+    workItem { id title webUrl widgets(onlyTypes: [START_AND_DUE_DATE]) { __typename ... on WorkItemWidgetStartAndDueDate { startDate dueDate } } }
   }
 }`
 

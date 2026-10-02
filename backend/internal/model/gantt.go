@@ -34,7 +34,26 @@ type GanttTask struct {
 	// attention or are at risk, each once; nil when there are none.
 	Health      string        `json:"health,omitempty"`
 	HealthBelow *HealthCounts `json:"healthBelow,omitempty"`
-	Children    []GanttTask   `json:"children,omitempty"` // Recursive structure
+	// BlockedBy / Blocking: the GitLab "blocked by" / "blocks" links of a work item (never
+	// set on milestones), in API order.
+	BlockedBy []DependencyRef `json:"blockedBy,omitempty"`
+	Blocking  []DependencyRef `json:"blocking,omitempty"`
+	Children  []GanttTask     `json:"children,omitempty"` // Recursive structure
+}
+
+// DependencyRef is the other end of a blocking link. ID is its GitLab global ID, never
+// suffixed: the UI finds the item's rows from it. External: the item is not in the
+// group's data (another group or project); its name, dates and state come with the link.
+type DependencyRef struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	WebURL      string `json:"webUrl,omitempty"`
+	Start       string `json:"start"`
+	End         string `json:"end"`
+	Closed      bool   `json:"closed,omitempty"`
+	NoStartDate bool   `json:"noStartDate,omitempty"`
+	NoDueDate   bool   `json:"noDueDate,omitempty"`
+	External    bool   `json:"external,omitempty"`
 }
 
 const (
