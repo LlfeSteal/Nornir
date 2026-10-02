@@ -190,6 +190,15 @@ test('the dialog brings the critical path forward and dims the rest', async ({ p
   await expect(legendArrow).toHaveCSS('border-top-color', 'rgb(245, 245, 247)');
 });
 
+test('an item the row only blocks elsewhere is not on its critical path', async ({ page }) => {
+  // Milestone 2.0's Shipping rules blocks Checkout, in milestone 1.0: nothing holds 2.0 up.
+  await listRow(page, '[Milestone] 2.0').getByRole('button', { name: 'View 1 dependency' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Dependencies of [Milestone] 2.0' });
+  await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('1 link · 2 items');
+  await expect(sheet.locator('.task-list-row[data-critical]')).toHaveCount(0);
+  await expect(sheet.locator('.gantt-chart[data-critical-path]')).toHaveCount(0);
+});
+
 test('the main chart dims nothing', async ({ page }) => {
   await expect(page.locator('.gantt-chart[data-critical-path]')).toHaveCount(0);
   await expect(page.locator('main .bar').first()).toHaveCSS('opacity', '1');

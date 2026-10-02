@@ -198,10 +198,11 @@ export interface DependencySubgraph {
 }
 
 /** The critical path: the chain of open links that sets the latest end. It ends at the open
- * blocked item that ends latest (ties: the longer chain, then the earliest start, then the row
- * order) and walks back through each item's driving blocker, the open blocker that ends latest.
- * Closed items and made-up due dates don't count. Row IDs, blocker first; empty when nothing
- * open is blocked. */
+ * blocked item of the row's subtree that ends latest (ties: the longer chain, then the earliest
+ * start, then the row order) and walks back through each item's driving blocker, the open
+ * blocker that ends latest, inside the subtree or not. An item the subtree blocks elsewhere
+ * (`linked`) doesn't hold the row up: it never ends the path. Closed items and made-up due dates
+ * don't count. Row IDs, blocker first; empty when nothing open of the subtree is blocked. */
 export function criticalPath(rows: Row[], links: DependencyLink[]): string[] {
   const tasks = new Map(rows.map((row) => [row.node.id, row.node]));
   const counts = (task: GanttTask | undefined): task is GanttTask => !!task && !task.closed && !task.noDueDate;
@@ -223,7 +224,7 @@ export function criticalPath(rows: Row[], links: DependencyLink[]): string[] {
     return path;
   };
 
-  const ends = rows.filter((row) => driving.has(row.node.id)).map((row) => row.node);
+  const ends = rows.filter((row) => !row.dependency?.linked && driving.has(row.node.id)).map((row) => row.node);
   const latest = ends.reduce((end, task) => (task.end > end ? task.end : end), '');
   let best: string[] = [];
   for (const task of ends) {

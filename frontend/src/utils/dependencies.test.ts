@@ -180,11 +180,14 @@ describe('dependencySubgraph', () => {
 
   it("shows an epic's own links, the other end linked", () => {
     const index = dependencyIndex(tree(), false);
-    const { rows } = dependencySubgraph(index, tree()[1]); // m2
+    const { rows, critical } = dependencySubgraph(index, tree()[1]); // m2
     expect(rows.map((row) => [row.node.id, row.dependency?.linked])).toEqual([
       ['X', false],
       ['C', true],
     ]);
+    // X only blocks C, outside m2: nothing holds m2 up.
+    expect(critical).toBe(0);
+    expect(rows.some((row) => row.dependency?.critical)).toBe(false);
   });
 
   it('survives a cycle', () => {
@@ -224,6 +227,19 @@ describe('criticalPath', () => {
     );
     expect(criticalPath(rows, [link('x', 'y'), link('a', 'b'), link('b', 'c')])).toEqual(['a', 'b', 'c']);
     expect(criticalPath(rows, [link('x', 'y'), link('b', 'c')])).toEqual(['x', 'y']);
+  });
+
+  it('ends inside the row: an item it blocks elsewhere is ignored, a blocker from elsewhere counts', () => {
+    const linked = { linked: true, external: false };
+    const rows = [
+      ...rowsOf(task('a', { end: '2026-10-10' })),
+      { ...rowsOf(task('x', { end: '2026-10-12' }))[0], dependency: linked },
+      ...rowsOf(task('b', { end: '2026-10-20' })),
+      { ...rowsOf(task('z', { end: '2026-10-30' }))[0], dependency: linked },
+    ];
+    // x (elsewhere) → b; a → b; b → z (elsewhere, ends last).
+    expect(criticalPath(rows, [link('x', 'b'), link('a', 'b'), link('b', 'z')])).toEqual(['x', 'b']);
+    expect(criticalPath(rows, [link('b', 'z')])).toEqual([]);
   });
 
   it("skips closed items and made-up due dates", () => {
