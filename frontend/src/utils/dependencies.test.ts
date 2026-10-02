@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DependencyRef, GanttTask } from '../types/gantt';
 import {
+  arrowPath,
   blockedMessage,
   blockedSpan,
   blockerConflicts,
@@ -283,6 +284,24 @@ describe('criticalPath', () => {
     expect(criticalPath(rows, [link('b', 'z')])).toEqual([]);
   });
 
+  it('follows the blockers of the ancestors: a blocked epic holds up its children', () => {
+    const rows = rowsOf(
+      task('f4', { end: '2026-10-20' }), // blocks f1
+      task('f1', { end: '2026-10-30' }),
+      task('u6', { end: '2026-10-16' }), // in f1, blocks u7
+      task('u7', { end: '2026-11-06' }), // in f1
+      task('f2', { end: '2026-10-16' }), // blocks f1, ends with u6
+    );
+    const parents = new Map([['u6', 'f1'], ['u7', 'f1']]);
+    const links = [link('f4', 'f1'), link('u6', 'u7')];
+    // f4 ends after u6: it holds u7 up, through f1.
+    expect(criticalPath(rows, links, parents)).toEqual(['f4', 'f1', 'u7']);
+    // u7's own blocker u6 wins the tie with f2; f2 then holds u6 up, through f1.
+    expect(criticalPath(rows, [link('f2', 'f1'), link('u6', 'u7')], parents)).toEqual(['f2', 'f1', 'u6', 'u7']);
+    // Without the hierarchy, only its own blockers.
+    expect(criticalPath(rows, links)).toEqual(['u6', 'u7']);
+  });
+
   it("skips closed items and made-up due dates", () => {
     const rows = rowsOf(
       task('a', { end: '2026-10-12' }),
@@ -298,5 +317,29 @@ describe('criticalPath', () => {
     expect(criticalPath(rowsOf(task('a')), [])).toEqual([]);
     const rows = rowsOf(task('a', { end: '2026-10-10' }), task('b', { end: '2026-10-12' }));
     expect(criticalPath(rows, [link('a', 'b'), link('b', 'a')])).toEqual(['a', 'b']);
+  });
+});
+
+describe('arrowPath', () => {
+  const ROW = 40;
+  const mid = (index: number) => index * ROW + ROW / 2;
+
+  it('goes straight across when there is room between the bars', () => {
+    expect(arrowPath(100, mid(0), 150, mid(2), ROW)).toBe('M100,20 H110 V100 H150');
+  });
+
+  it('goes round in a lane of the target row, off its bar', () => {
+    // Down: under the target row's top (its bar starts 8 px down).
+    expect(arrowPath(200, mid(0), 150, mid(2), ROW)).toBe('M200,20 h10 V84 H140 V100 H150');
+    // Up: over its bottom.
+    expect(arrowPath(200, mid(3), 150, mid(1), ROW)).toBe('M200,140 h10 V76 H140 V60 H150');
+  });
+
+  it('keeps apart two targets starting together in adjacent rows', () => {
+    // One reached from below (row 4), the other from above (row 5): no shared segment.
+    const intoFour = arrowPath(300, mid(7), 150, mid(4), ROW);
+    const intoFive = arrowPath(250, mid(2), 150, mid(5), ROW);
+    expect(intoFour).toBe('M300,300 h10 V196 H140 V180 H150');
+    expect(intoFive).toBe('M250,100 h10 V204 H140 V220 H150');
   });
 });

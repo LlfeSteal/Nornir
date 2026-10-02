@@ -221,28 +221,45 @@ export interface DependencySubgraph {
 }
 
 /** The critical path: the chain of open links that sets the latest end. It ends at the open
- * blocked item of the row's subtree that ends latest (ties: the longer chain, then the earliest
- * start, then the row order) and walks back through each item's driving blocker, the open
- * blocker that ends latest, inside the subtree or not. An item the subtree blocks elsewhere
- * (`linked`) doesn't hold the row up: it never ends the path. Closed items and made-up due dates
- * don't count. Row IDs, blocker first; empty when nothing open of the subtree is blocked. */
-export function criticalPath(rows: Row[], links: DependencyLink[]): string[] {
+ * held-up item of the row's subtree that ends latest (ties: the longer chain, then the earliest
+ * start, then the row order) and walks back through each item's driving blocker: the open
+ * blocker that ends latest among its own and those of its ancestors (`parents`: GitLab ID → its
+ * parent's, within the row's subtree), since a blocked epic holds up its children; its own win
+ * ties. A step through an ancestor puts it on the path, between the blocker and the item. An item
+ * the subtree blocks elsewhere (`linked`) doesn't hold the row up: it never ends the path. Closed
+ * items and made-up due dates don't count. Row IDs, blocker first; empty when nothing open of the
+ * subtree is held up. */
+export function criticalPath(rows: Row[], links: DependencyLink[], parents = new Map<string, string>()): string[] {
   const tasks = new Map(rows.map((row) => [row.node.id, row.node]));
   const counts = (task: GanttTask | undefined): task is GanttTask => !!task && !task.closed && !task.noDueDate;
-  // The driving blocker of each blocked item.
-  const driving = new Map<string, GanttTask>();
-  for (const link of links) {
-    const blocker = tasks.get(link.from);
-    if (!counts(blocker) || !counts(tasks.get(link.to))) continue;
-    const current = driving.get(link.to);
-    if (!current || blocker.end > current.end) driving.set(link.to, blocker);
+  const into = new Map<string, DependencyLink[]>();
+  for (const link of links) into.set(link.to, [...(into.get(link.to) ?? []), link]);
+  // The driving blocker of each held-up item, and the item it blocks: itself or an ancestor.
+  const driving = new Map<string, { blocker: GanttTask; via: string }>();
+  for (const row of rows) {
+    const id = row.node.id;
+    if (!counts(row.node)) continue;
+    const seen = new Set<string>();
+    for (let at: string | undefined = id; at !== undefined && !seen.has(at); at = parents.get(at)) {
+      seen.add(at);
+      for (const link of into.get(at) ?? []) {
+        const blocker = tasks.get(link.from);
+        if (!counts(blocker) || blocker.id === id) continue;
+        const current = driving.get(id);
+        if (!current || blocker.end > current.blocker.end) driving.set(id, { blocker, via: at });
+      }
+    }
   }
   const walk = (id: string): string[] => {
     const path = [id];
     const seen = new Set(path);
-    for (let blocker = driving.get(id); blocker && !seen.has(blocker.id); blocker = driving.get(blocker.id)) {
-      path.unshift(blocker.id);
-      seen.add(blocker.id);
+    for (let step = driving.get(id); step && !seen.has(step.blocker.id); step = driving.get(step.blocker.id)) {
+      if (!seen.has(step.via)) {
+        path.unshift(step.via);
+        seen.add(step.via);
+      }
+      path.unshift(step.blocker.id);
+      seen.add(step.blocker.id);
     }
     return path;
   };
@@ -257,6 +274,21 @@ export function criticalPath(rows: Row[], links: DependencyLink[]): string[] {
     if (path.length > best.length || (path.length === best.length && start(path) < start(best))) best = path;
   }
   return best;
+}
+
+export const ARROW_GAP = 10; // px, horizontal run out of a bar and into the next
+const ARROW_LANE = 4; // px, from the row's edge: where an arrow going round runs, off the bars
+
+/** The SVG path of an arrow from a blocker's end (x1, y1) to the start of what it blocks (x2, y2),
+ * the middles of their rows. With room between the bars: out, down (or up), in. Otherwise it goes
+ * round: down (or up) at the blocker's end to a lane inside the target's row, off its bar — under
+ * its top coming from above, over its bottom coming from below — then back to the target's
+ * start. Each arrow runs along its own target's row: two targets starting together share
+ * nothing. */
+export function arrowPath(x1: number, y1: number, x2: number, y2: number, rowHeight: number): string {
+  if (x2 - x1 >= 2 * ARROW_GAP) return `M${x1},${y1} H${x1 + ARROW_GAP} V${y2} H${x2}`;
+  const lane = y2 + (y2 > y1 ? -1 : 1) * (rowHeight / 2 - ARROW_LANE);
+  return `M${x1},${y1} h${ARROW_GAP} V${lane} H${x2 - ARROW_GAP} V${y2} H${x2}`;
 }
 
 function externalTask(ref: DependencyRef): GanttTask {
@@ -382,7 +414,7 @@ export function dependencySubgraph(index: DependencyIndex, node: GanttTask): Dep
     return { from: edge.blocker, to: edge.blocked, conflict: conflictBetween(blocker, blocked) !== undefined };
   });
 
-  const critical = criticalPath(rows, links);
+  const critical = criticalPath(rows, links, new Map([...parents].map(([id, parent]) => [id, gitlabId(parent.id)])));
   const steps = new Set(critical.slice(1).map((id, step) => `${critical[step]} ${id}`));
   critical.forEach((id) => (tasks.get(id)!.info.critical = true));
   links.forEach((link) => steps.has(`${link.from} ${link.to}`) && (link.critical = true));

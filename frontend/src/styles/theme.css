@@ -439,10 +439,9 @@ button { font: inherit; color: inherit; }
 .dependency-links path[data-conflict] { stroke: var(--dependency-conflict); }
 .dependency-links marker path { fill: var(--dependency); stroke: none; }
 .dependency-links marker.conflict path { fill: var(--dependency-conflict); }
-/* The critical path: its arrows in the strongest neutral (red when they conflict), the rest
-   of the dialog dimmed. No outline, no badge: contrast is enough. */
+/* The critical path: its arrows in the strongest neutral, even when they conflict (the bar's red
+   hatch shows it), the rest of the dialog dimmed. No outline, no badge: contrast is enough. */
 .dependency-links path[data-critical] { stroke: var(--critical); stroke-width: 2; }
-.dependency-links path[data-critical][data-conflict] { stroke: var(--dependency-conflict); }
 .dependency-links marker.critical path { fill: var(--critical); }
 [data-critical-path] .bar, [data-critical-path] .dependency-links > path { transition: opacity 0.2s var(--ease), filter 0.15s var(--ease); }
 [data-critical-path] .bar:not([data-critical]), [data-critical-path] .dependency-links > path:not([data-critical]) { opacity: 0.35; }

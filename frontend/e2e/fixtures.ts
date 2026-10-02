@@ -202,9 +202,11 @@ export const dependencyTree = [
 
 // Dependencies inside a hierarchy, like a real milestone: Capability 2 › Feature 2 › US 1 and
 // Feature 1 › US 6, US 7. Feature 2 blocks Feature 1, US 1 blocks US 6 and US 7, US 6 blocks US 7.
-// Capability 2 has no link of its own: the dialog shows it for its place.
+// Capability 2 has no link of its own: the dialog shows it for its place. Feature 4, in
+// milestone 2, also blocks Feature 1 and ends after US 6: through Feature 1, it holds US 7 up.
 const NF2 = dep('F2', 'Feature 2', '2026-09-01', '2026-10-09');
 const NF1 = dep('F1', 'Feature 1', '2026-10-05', '2026-10-30');
+const NF4 = dep('F4', 'Feature 4', '2026-09-15', '2026-10-20');
 const NUS1 = dep('U1', 'US 1', '2026-09-14', '2026-10-09');
 const NUS6 = dep('U6', 'US 6', '2026-10-05', '2026-10-16');
 const NUS7 = dep('U7', 'US 7', '2026-10-12', '2026-11-06');
@@ -217,13 +219,21 @@ export const nestedDependencyTree = [
         children: [
           nested(NF2, 'epic', { blocking: [NF1], children: [nested(NUS1, 'issue', { blocking: [NUS7, NUS6] })] }),
           nested(NF1, 'epic', {
-            blockedBy: [NF2],
+            blockedBy: [NF2, NF4],
             children: [
               nested(NUS7, 'issue', { blockedBy: [NUS1, NUS6] }),
               nested(NUS6, 'issue', { blockedBy: [NUS1], blocking: [NUS7] }),
             ],
           }),
         ],
+      }),
+    ],
+  },
+  {
+    id: 'M2', name: '[Milestone] Milestone 2', type: 'milestone', start: '2026-09-15', end: '2026-12-18', progress: 0, linearProgress: 20,
+    children: [
+      nested(dep('CAP1', 'Capability 1', '2026-09-15', '2026-12-18'), 'epic', {
+        children: [nested(NF4, 'epic', { blocking: [NF1] })],
       }),
     ],
   },

@@ -17,7 +17,7 @@ import { clipBar, DateRange } from '../utils/period';
 import { missingDatesMessage } from '../utils/schedule';
 import { rowHealth } from '../utils/health';
 import { overrun } from '../utils/overrun';
-import { blockedSpan, DependencyLink } from '../utils/dependencies';
+import { arrowPath, blockedSpan, DependencyLink } from '../utils/dependencies';
 
 // The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
 // calendar columns) on screen are rendered: one native scroll container moves everything,
@@ -371,8 +371,6 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
   );
 }
 
-const ARROW_GAP = 10; // px, horizontal run out of a bar and into the next
-
 /** The arrows of the dependencies dialog, from each blocker's end to the start of what it
  * blocks. Only the arrows crossing the rendered rows are drawn; positions come from the row
  * indexes and the timeline, not from the page. */
@@ -404,17 +402,9 @@ function DependencyLinks({
     const x2 = timeline.x(clipBar(rows[to].node, range).start);
     const y1 = from * ROW_HEIGHT + ROW_HEIGHT / 2;
     const y2 = to * ROW_HEIGHT + ROW_HEIGHT / 2;
-    let d: string;
-    if (x2 - x1 >= 2 * ARROW_GAP) {
-      // Room between the bars: out, down (or up), in.
-      const x = x1 + ARROW_GAP;
-      d = `M${x1},${y1} H${x} V${y2} H${x2}`;
-    } else {
-      // The blocked item starts before the blocker ends: go round, along the row boundary.
-      const y = (to > from ? to : from) * ROW_HEIGHT;
-      d = `M${x1},${y1} h${ARROW_GAP} V${y} H${x2 - ARROW_GAP} V${y2} H${x2}`;
-    }
-    const kind = link.conflict ? 'c' : link.critical ? 'k' : 'n';
+    const d = arrowPath(x1, y1, x2, y2, ROW_HEIGHT);
+    // The critical path keeps its color when it conflicts: the bar's hatch shows the conflict.
+    const kind = link.critical ? 'k' : link.conflict ? 'c' : 'n';
     paths.push({ key: `${link.from} ${link.to}`, d, conflict: link.conflict, critical: !!link.critical, markerId: `${marker}${kind}` });
   }
   // The critical path on top.
