@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DependencyRef, GanttTask } from '../types/gantt';
 import {
   blockedMessage,
+  blockedSpan,
   blockerConflicts,
   conflictMessage,
   dependencyCount,
@@ -11,6 +12,7 @@ import {
   openBlockers,
 } from './dependencies';
 import { task } from './testing';
+import { parseDay } from './timeline';
 
 const ref = (id: string, fields: Partial<DependencyRef> = {}): DependencyRef => ({
   id,
@@ -81,6 +83,31 @@ describe('blockerConflicts', () => {
     expect(blockerConflicts(task('n', { start: '2026-10-05', noStartDate: true, blockedBy: [blocker] }))).toEqual([]);
     expect(blockerConflicts(task('n', { start: '2026-10-05', blockedBy: [{ ...blocker, closed: true }] }))).toEqual([]);
     expect(blockerConflicts(task('n', { start: '2026-10-05', blockedBy: [{ ...blocker, noDueDate: true }] }))).toEqual([]);
+  });
+});
+
+describe('blockedSpan', () => {
+  const day = (iso: string) => parseDay(iso).getTime();
+
+  it('runs from the row start to the latest end of its conflicting blockers', () => {
+    const node = task('n', {
+      start: '2026-10-05',
+      end: '2026-10-20',
+      blockedBy: [ref('a', { end: '2026-10-08' }), ref('b', { end: '2026-10-12' }), ref('c', { end: '2026-10-30', closed: true })],
+    });
+    const span = blockedSpan(node)!;
+    expect([span.from.getTime(), span.to.getTime()]).toEqual([day('2026-10-05'), day('2026-10-12')]);
+  });
+
+  it("stops at the row's own end", () => {
+    const node = task('n', { start: '2026-10-05', end: '2026-10-07', blockedBy: [ref('a', { end: '2026-10-12' })] });
+    expect(blockedSpan(node)!.to.getTime()).toBe(day('2026-10-07'));
+  });
+
+  it('is undefined without a conflict', () => {
+    expect(blockedSpan(task('n', { start: '2026-10-05', end: '2026-10-20' }))).toBeUndefined();
+    expect(blockedSpan(task('n', { start: '2026-10-05', end: '2026-10-20', blockedBy: [ref('a', { end: '2026-10-05' })] }))).toBeUndefined();
+    expect(blockedSpan(task('n', { start: '2026-10-05', end: '2026-10-20', closed: true, blockedBy: [ref('a', { end: '2026-10-12' })] }))).toBeUndefined();
   });
 });
 

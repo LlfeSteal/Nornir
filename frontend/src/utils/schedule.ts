@@ -1,6 +1,3 @@
-import { DependencyRef } from '../types/gantt';
-import { blockerConflicts, conflictMessage } from './dependencies';
-
 // Schedule status of an epic or milestone, from its real progress and its linear progress
 // (the progress expected today if the work advanced evenly over its dates). The gap is in
 // percentage points: expected 80%, done 77% → 3 points behind.
@@ -38,21 +35,17 @@ export function noChildrenMessage(row: { type: string; closed?: boolean; noChild
   return undefined;
 }
 
-/** What the warning triangle of a row says, one message per line: missing dates, no child
- * items, then each open blocker that ends after the row starts. Empty when there is nothing
- * to warn about. */
+/** What the warning triangle of a row says, one message per line: missing dates, then no
+ * child items. Empty when there is nothing to warn about. A row starting before its blocker
+ * ends is hatched in red instead (`blockedSpan`). */
 export function rowWarnings(row: {
   type: string;
-  start?: string;
   closed?: boolean;
   noStartDate?: boolean;
   noDueDate?: boolean;
   noChildren?: boolean;
-  blockedBy?: DependencyRef[];
 }): string[] {
-  return [missingDatesMessage(row), noChildrenMessage(row), ...blockerConflicts(row).map(conflictMessage)].filter(
-    (message): message is string => !!message,
-  );
+  return [missingDatesMessage(row), noChildrenMessage(row)].filter((message): message is string => !!message);
 }
 
 /** Why a row's dates can't be trusted (made up by the backend), or undefined when GitLab

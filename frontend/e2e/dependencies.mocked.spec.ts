@@ -1,8 +1,8 @@
 import { expect, Page, test } from '@playwright/test';
 import { dependencyTree, mockApi } from './fixtures';
 
-// GitLab blocking links: a mark on blocked rows, a warning when a row starts before its
-// blocker ends, the Blocked filter, and the dialog listing the dependencies of a row and its
+// GitLab blocking links: a mark on blocked rows, a red hatch on the part of a bar planned
+// before its blocker ends, the Blocked filter, and the dialog listing the dependencies of a row and its
 // descendants with arrows. Today is Thursday, October 15, 2026.
 
 const listRow = (page: Page, name: string, scope = page.locator('main')) =>
@@ -35,11 +35,34 @@ test('marks the items with an open blocker', async ({ page }) => {
   await expect(page.locator('.gantt-tooltip .dependency-note')).toHaveText(['Blocked by Auth API']);
 });
 
-test('warns when an item starts before its blocker ends', async ({ page }) => {
-  const warning = listRow(page, 'Checkout').locator('.row-warning');
-  await expect(warning).toHaveAttribute('title', 'Starts 10 days before Shipping rules ends\nStarts 3 days before Vendor SDK ends');
+test('hatches the part of a bar planned before its blocker ends', async ({ page }) => {
+  await page.getByRole('radio', { name: 'Day' }).click();
+  const barOf = (name: string) => page.locator('main .bar', { has: page.locator('.bar-label', { hasText: new RegExp(`^${name}$`) }) }).first();
+  const checkout = barOf('Checkout');
+  await expect(checkout).toHaveAttribute('data-conflict', 'true');
+  // No warning sign: the hatch says it.
+  await expect(listRow(page, 'Checkout').locator('.row-warning')).toHaveCount(0);
+
+  // From Checkout's start (October 5) to the end of its latest blocker, Shipping rules (October 15).
+  const hatch = checkout.locator('.bar-conflict');
+  await expect(hatch).toBeVisible();
+  const dayWidth = (await page.locator('.calendar-cell').first().boundingBox())!.width;
+  const barBox = (await checkout.boundingBox())!;
+  const hatchBox = (await hatch.boundingBox())!;
+  expect(hatchBox.x).toBeCloseTo(barBox.x, 0);
+  expect(hatchBox.width).toBeCloseTo(10 * dayWidth, 0);
+
+  // The tooltip says which blockers end after it starts.
+  const label = (await checkout.locator('.bar-label').boundingBox())!;
+  await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
+  await expect(page.locator('.gantt-tooltip .conflict-note')).toHaveText([
+    'Starts 10 days before Shipping rules ends',
+    'Starts 3 days before Vendor SDK ends',
+  ]);
+
   // Billing starts after Auth API ends.
-  await expect(listRow(page, 'Billing').locator('.row-warning')).toHaveCount(0);
+  await expect(barOf('Billing')).not.toHaveAttribute('data-conflict');
+  await expect(barOf('Billing').locator('.bar-conflict')).toHaveCount(0);
 });
 
 test('the Blocked filter lists the blocked items', async ({ page }) => {

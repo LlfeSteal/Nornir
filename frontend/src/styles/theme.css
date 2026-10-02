@@ -308,7 +308,7 @@ button { font: inherit; color: inherit; }
 .gantt-tooltip .health-note[data-health='atRisk'] strong { color: var(--health-at-risk); }
 .gantt-tooltip .dependency-note strong, .gantt-tooltip .dependency-place strong { display: inline; margin: 0; font-size: inherit; }
 .gantt-tooltip .dependency-note[data-blocked] strong { color: var(--blocked); }
-.gantt-tooltip .overrun-note strong { display: inline; margin: 0; font-size: inherit; color: var(--overrun); }
+.gantt-tooltip .overrun-note strong, .gantt-tooltip .conflict-note strong { display: inline; margin: 0; font-size: inherit; color: var(--overrun); }
 .gantt-tooltip[data-status='closed'] .progress-value { background: var(--text-tertiary); }
 .gantt-tooltip .schedule[data-status='closed'] strong { color: var(--text-secondary); }
 .gantt-tooltip[data-status='late'] .progress-value, .gantt-tooltip[data-status='late'] .progress-linear { background: var(--late); }
@@ -418,11 +418,13 @@ button { font: inherit; color: inherit; }
   opacity: 1; background-color: color-mix(in srgb, var(--undated) 35%, transparent);
   outline: 1.5px dashed var(--undated-stroke); outline-offset: -1.5px;
 }
-/* Planned past the parent's end: that part of the bar is hatched in red, over its colors */
-.bar-overrun {
+/* Planned past the parent's end, or before a blocker ends: that part of the bar is hatched in
+   red, over its colors */
+.bar-overrun, .bar-conflict {
   position: absolute; top: 0; bottom: 0; border-radius: 0 6px 6px 0;
   background: repeating-linear-gradient(45deg, var(--overrun) 0 3px, color-mix(in srgb, var(--overrun) 30%, var(--card)) 3px 6px);
 }
+.bar-conflict { border-radius: 6px 0 0 6px; }
 .bar[data-undated]:not([data-group]) .bar-label.inside { color: var(--text); }
 /* Dependencies dialog: items linked from elsewhere are gray */
 .bar[data-linked] { --bar: var(--undated); }

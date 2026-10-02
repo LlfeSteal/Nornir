@@ -3,8 +3,8 @@ import { canonicalId, TOP_COPY_SUFFIX } from './filters';
 import { Row } from './flatten';
 import { parseDay } from './timeline';
 
-// GitLab "blocked by" / "blocks" links. In the chart: a mark on blocked rows and a warning when
-// a row starts before its blocker ends. A row whose subtree holds links opens them in a
+// GitLab "blocked by" / "blocks" links. In the chart: a mark on blocked rows and a red hatch on
+// the part of a bar planned before its blocker ends. A row whose subtree holds links opens them in a
 // dialog: a flat chart of the items involved, with arrows from each blocker to what it blocks.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -67,6 +67,17 @@ export function blockerConflicts(
 /** "Starts 3 days before Payments ends". */
 export function conflictMessage(conflict: BlockerConflict): string {
   return `Starts ${conflict.days} ${conflict.days === 1 ? 'day' : 'days'} before ${conflict.blocker.name} ends`;
+}
+
+/** The part of a row planned before its open blockers end, hatched in red: from its start to
+ * the latest end among them, at most its own end. Undefined when there is no conflict. */
+export function blockedSpan(
+  node: Pick<GanttTask, 'start' | 'end'> & Partial<Pick<GanttTask, 'closed' | 'noStartDate' | 'blockedBy'>>,
+): { from: Date; to: Date } | undefined {
+  const conflicts = blockerConflicts(node);
+  if (conflicts.length === 0) return undefined;
+  const latest = Math.max(...conflicts.map((conflict) => parseDay(conflict.blocker.end).getTime()));
+  return { from: parseDay(node.start), to: new Date(Math.min(parseDay(node.end).getTime(), latest)) };
 }
 
 interface Edge {

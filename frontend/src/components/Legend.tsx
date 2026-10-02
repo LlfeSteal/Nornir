@@ -73,6 +73,8 @@ export const Legend: React.FC = () => (
         No dates
         <span className="legend-swatch overrun" />
         Past its parent
+        <span className="legend-swatch overrun" />
+        Before its blocker ends
       </span>
       <span className="legend-item">
         <span className="legend-line" />

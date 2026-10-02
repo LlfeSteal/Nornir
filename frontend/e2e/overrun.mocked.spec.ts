@@ -111,8 +111,11 @@ test.describe('planned past the parent', () => {
     await open(page);
     const legend = page.getByLabel('Legend');
     await expect(legend).toContainText('Past its parent');
-    const image = await legend.locator('.legend-swatch.overrun').evaluate((el) => getComputedStyle(el).backgroundImage);
-    expect(image).toContain('repeating-linear-gradient');
+    await expect(legend).toContainText('Before its blocker ends');
+    // The same hatch for both: planned out of order.
+    const images = await legend.locator('.legend-swatch.overrun').evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundImage));
+    expect(images).toHaveLength(2);
+    for (const image of images) expect(image).toContain('repeating-linear-gradient');
   });
 });
 

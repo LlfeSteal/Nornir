@@ -17,7 +17,7 @@ import { clipBar, DateRange } from '../utils/period';
 import { missingDatesMessage } from '../utils/schedule';
 import { rowHealth } from '../utils/health';
 import { overrun } from '../utils/overrun';
-import { DependencyLink } from '../utils/dependencies';
+import { blockedSpan, DependencyLink } from '../utils/dependencies';
 
 // The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
 // calendar columns) on screen are rendered: one native scroll container moves everything,
@@ -333,6 +333,10 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
   const past = overrun(node, row.parent);
   const pastFrom = past ? timeline.x(past.from > bar.start ? past.from : bar.start) : 0;
   const pastWidth = past ? timeline.x(past.to < bar.end ? past.to : bar.end) - pastFrom : 0;
+  // The part planned before its blockers end, cut the same way.
+  const blocked = blockedSpan(node);
+  const blockedFrom = blocked ? timeline.x(blocked.from > bar.start ? blocked.from : bar.start) : 0;
+  const blockedWidth = blocked ? timeline.x(blocked.to < bar.end ? blocked.to : bar.end) - blockedFrom : 0;
   return (
     <div
       className="bar"
@@ -344,6 +348,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       data-nested={row.depth > 0 ? 'true' : undefined}
       data-health={health}
       data-overrun={past ? 'true' : undefined}
+      data-conflict={blocked ? 'true' : undefined}
       data-linked={row.dependency?.linked ? 'true' : undefined}
       data-external={row.dependency?.external ? 'true' : undefined}
       style={{ left, width }}
@@ -358,6 +363,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       )}
       {!node.closed && <div className="bar-progress" style={{ width: `${bar.progress}%` }} />}
       {pastWidth > 0 && <div className="bar-overrun" style={{ left: pastFrom - left, width: pastWidth }} />}
+      {blockedWidth > 0 && <div className="bar-conflict" style={{ left: blockedFrom - left, width: blockedWidth }} />}
       <span className={labelInside ? 'bar-label inside' : 'bar-label'}>{node.name}</span>
     </div>
   );

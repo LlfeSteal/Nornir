@@ -5,7 +5,7 @@ import { missingDatesMessage, noChildrenMessage, rowWarnings, scheduleLabel, sch
 import { parseDay } from '../utils/timeline';
 import { HEALTH_LABELS, healthCountsMessage, healthMessage, rowHealth } from '../utils/health';
 import { overrun, overrunMessage } from '../utils/overrun';
-import { blockedMessage, dependencyCount } from '../utils/dependencies';
+import { blockedMessage, blockerConflicts, conflictMessage, dependencyCount } from '../utils/dependencies';
 import { DependencyContext } from './DependencyContext';
 import { DependencyRef } from '../types/gantt';
 
@@ -171,6 +171,11 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
           <strong>{overrunMessage(past, row.parent)}</strong>
         </p>
       )}
+      {blockerConflicts(node).map((conflict) => (
+        <p key={conflict.blocker.id} className="conflict-note">
+          <strong>{conflictMessage(conflict)}</strong>
+        </p>
+      ))}
       {node.health && (
         <p className="health-note" data-health={node.health}>
           {node.health !== 'onTrack' && <HealthBadge level={node.health} size={12} />}
