@@ -35,10 +35,30 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
     return () => element?.close();
   }, []);
 
+  // A click on the backdrop targets the dialog itself, like one in its own empty areas (the
+  // chart's side margins): tell them apart by the dialog's box. Both the press and the release
+  // must be outside, so a selection dragged out of the sheet doesn't close it.
+  const pressedOutside = useRef(false);
+  const outside = (event: React.MouseEvent) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+  };
+
   const links = graph.links.length;
   return (
-    // Escape closes the dialog natively, which fires `close`.
-    <dialog ref={dialog} className="dependency-dialog" aria-labelledby={titleId} onClose={onClose}>
+    // Escape closes the dialog natively, which fires `close`; so do Close and a click outside.
+    <dialog
+      ref={dialog}
+      className="dependency-dialog"
+      aria-labelledby={titleId}
+      onClose={onClose}
+      onMouseDown={(event) => {
+        pressedOutside.current = outside(event);
+      }}
+      onClick={(event) => {
+        if (pressedOutside.current && outside(event)) dialog.current?.close();
+      }}
+    >
       <header className="dependency-dialog-header">
         <div className="dependency-dialog-title">
           <h2 id={titleId}>Dependencies of {node.name}</h2>

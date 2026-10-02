@@ -88,6 +88,14 @@ test('rows with dependencies below them open them in a dialog', async ({ page })
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   await expect(dialog(page)).toHaveCount(0);
+
+  // A click inside the sheet keeps it open; one on the dimmed page behind it closes it.
+  await listRow(page, '[Milestone] 1.0').getByRole('button', { name: 'View 3 dependencies' }).click();
+  await expect(dialog(page)).toBeVisible();
+  await dialog(page).getByRole('heading').click();
+  await expect(dialog(page)).toBeVisible();
+  await page.mouse.click(5, 5);
+  await expect(dialog(page)).toHaveCount(0);
 });
 
 test('an arrow runs from the blocker\'s end to the start of what it blocks', async ({ page }) => {

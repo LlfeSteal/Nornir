@@ -442,7 +442,10 @@ button { font: inherit; color: inherit; }
   background: var(--bg); color: var(--text); box-shadow: var(--popover-shadow);
 }
 .dependency-dialog[open] { display: flex; flex-direction: column; animation: menu-in 0.15s var(--ease); }
-.dependency-dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
+.dependency-dialog::backdrop { background: rgba(0, 0, 0, 0.5); animation: fade-in 0.15s var(--ease); }
+/* Literal colors: ::backdrop doesn't inherit custom properties in every browser. */
+:root[data-theme='dark'] .dependency-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .dependency-dialog-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px 12px; }
 .dependency-dialog-title { flex: 1; min-width: 0; }
 .dependency-dialog-title h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 600; }
@@ -454,7 +457,7 @@ button { font: inherit; color: inherit; }
 .gantt-tooltip-anchor { position: fixed; z-index: 30; width: max-content; max-width: 320px; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  *, *::before, *::after, ::backdrop { animation: none !important; transition: none !important; }
 }
 
 /* Appearance menu (macOS-style pull-down) */
