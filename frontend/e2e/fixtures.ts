@@ -246,3 +246,30 @@ export const nestedDependencyTree = [
     ],
   },
 ];
+
+// Portfolios and shared links need real GitLab IDs (`gid://gitlab/…`): links carry them as
+// "m1", "w10". Tests run on 2026-10-15. Release 1 holds Payments (its `_ms_` copy); Payments
+// is late, and its Refunds ends past it; Search's Indexer is at risk; Billing has no children.
+const W = (n: number) => `gid://gitlab/WorkItem/${n}`;
+const MS = (n: number) => `gid://gitlab/Milestone/${n}`;
+const payments = (suffix: string) => ({
+  id: `${W(10)}${suffix}`, name: 'Payments', type: 'epic', start: '2026-09-01', end: '2026-10-31', progress: 0, linearProgress: 60,
+  children: [{ id: `${W(11)}${suffix}`, name: 'Refunds', type: 'issue', start: '2026-10-01', end: '2026-11-15', progress: 0, linearProgress: 0 }],
+});
+export const portfolioTree = [
+  {
+    id: MS(1), name: '[Milestone] Release 1', type: 'milestone', start: '2026-09-01', end: '2026-11-30', progress: 50, linearProgress: 50,
+    children: [payments(`_ms_${W(10)}`)],
+  },
+  {
+    id: MS(2), name: '[Milestone] Release 2', type: 'milestone', start: '2026-12-01', end: '2026-12-31', progress: 0, linearProgress: 0,
+    // An issue without a parent epic sits only under its milestone, without suffix.
+    children: [{ id: W(30), name: 'Launch', type: 'issue', start: '2026-12-01', end: '2026-12-10', progress: 0, linearProgress: 0 }],
+  },
+  payments(''),
+  {
+    id: W(20), name: 'Search', type: 'epic', start: '2026-10-01', end: '2026-12-31', progress: 50, linearProgress: 20,
+    children: [{ id: W(21), name: 'Indexer', type: 'issue', health: 'atRisk', start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 0 }],
+  },
+  { id: W(40), name: 'Billing', type: 'epic', noChildren: true, start: '2026-10-01', end: '2026-12-31', progress: 0, linearProgress: 20 },
+];

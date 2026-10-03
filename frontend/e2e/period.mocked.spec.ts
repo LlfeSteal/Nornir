@@ -118,13 +118,18 @@ test.describe('period', () => {
     await expect(page.getByTitle('Old epic')).toBeVisible();
   });
 
-  test('the preset is remembered, not the arrows', async ({ page }) => {
+  test('the preset is remembered, not the arrows; a reload keeps both through the URL', async ({ page }) => {
     await open(page);
     await pickPreset(page, 'This quarter');
     await page.getByRole('button', { name: 'Next period' }).click();
     await expect(page.getByRole('button', { name: 'Period: Q1 2027' })).toBeVisible();
+    await expect(page).toHaveURL(/\?period=quarter&offset=1$/);
 
     await page.reload();
+    await expect(page.getByRole('button', { name: 'Period: Q1 2027' })).toBeVisible();
+
+    // A new visit: the remembered preset, on the current period.
+    await page.goto('/');
     await expect(page.getByRole('button', { name: 'Period: Q4 2026' })).toBeVisible();
     await expect(page.getByRole('radio', { name: 'Week' })).toHaveAttribute('aria-checked', 'true');
   });

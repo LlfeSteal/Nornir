@@ -317,6 +317,19 @@ test.describe('deep hierarchy with duplicates', () => {
     expect(await page.locator('.task-list-row').count()).toBeLessThan(100);
   });
 
+  test('the attention summary counts the whole tree and filters quickly', async ({ page }) => {
+    await open(page, deep, '[Milestone] Sprint 00');
+    const chips = page.getByRole('group', { name: 'Attention summary' }).getByRole('button');
+    await expect(chips.first()).toBeVisible();
+    const chip = chips.first();
+    expect(await timed(async () => {
+      await chip.click();
+      await expect(chip).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.locator('.task-list-row').first()).toBeVisible();
+    })).toBeLessThan(2_000);
+    expect(await page.locator('.task-list-row').count()).toBeLessThan(100);
+  });
+
   test('showing and hiding closed items stays quick', async ({ page }) => {
     await open(page, deep, '[Milestone] Sprint 00');
     const closed = page.getByRole('button', { name: 'Closed' });

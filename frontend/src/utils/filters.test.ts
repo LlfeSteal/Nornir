@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyFilters, canonicalId, DEFAULT_FILTERS, Filters, isFiltering, normalizeText } from './filters';
+import { attentionIndex } from './attention';
+import { applyFilters, canonicalId, DEFAULT_FILTERS, Filters, fullId, hasFilters, isFiltering, itemOptions, normalizeText, shortId } from './filters';
 import { task } from './testing';
 
 // Shaped like the backend output: a milestone holding the `_ms_` copy of an issue, an epic
@@ -78,5 +79,65 @@ describe('applyFilters: blocked', () => {
   it('lists the items with an open blocker', () => {
     expect(isFiltering({ ...DEFAULT_FILTERS, blocked: true })).toBe(true);
     expect(applyFilters(blockedTree, { ...DEFAULT_FILTERS, blocked: true }).map((node) => node.id)).toEqual(['A_top']);
+  });
+});
+
+describe('shortId / fullId', () => {
+  it('shortens milestone and work item IDs, copies included, and back', () => {
+    expect(shortId('gid://gitlab/Milestone/123')).toBe('m123');
+    expect(shortId('gid://gitlab/WorkItem/456_root_gid://gitlab/WorkItem/9')).toBe('w456');
+    expect(fullId('m123')).toBe('gid://gitlab/Milestone/123');
+    expect(fullId('w456')).toBe('gid://gitlab/WorkItem/456');
+  });
+
+  it('refuses anything else', () => {
+    expect(shortId('gid://gitlab/Group/1')).toBeUndefined();
+    expect(shortId('E1')).toBeUndefined();
+    expect(fullId('x1')).toBeUndefined();
+    expect(fullId('m12a')).toBeUndefined();
+  });
+});
+
+describe('items (portfolios)', () => {
+  // Like the backend: milestone M1 holds epic E2's `_ms_` copy; E2 is under E1, so its
+  // top-level row is the `_root_` copy.
+  const W = (n: number) => `gid://gitlab/WorkItem/${n}`;
+  const M = (n: number) => `gid://gitlab/Milestone/${n}`;
+  const items = [
+    task(M(1), { type: 'milestone', name: 'Release', children: [task(`${W(2)}_ms_${W(2)}`, { type: 'epic', name: 'Search' })] }),
+    task(M(2), { type: 'milestone', name: 'Later' }),
+    task(W(1), { type: 'epic', name: 'Payments', children: [task(W(2), { type: 'epic', name: 'Search', children: [task(W(3), { name: 'Index' })] })] }),
+    task(`${W(2)}_root_${W(2)}`, { type: 'epic', name: 'Search', children: [task(`${W(3)}_root_${W(2)}`, { name: 'Index' })] }),
+  ];
+  const pick = (fields: Partial<Filters>) => applyFilters(items, { ...DEFAULT_FILTERS, ...fields }).map((node) => node.id);
+
+  it('keeps the top-level rows of the picked milestones then epics, as a tree', () => {
+    const shown = applyFilters(items, { ...DEFAULT_FILTERS, items: ['w2', 'm1', 'm99'] });
+    expect(shown.map((node) => node.id)).toEqual([M(1), `${W(2)}_root_${W(2)}`]);
+    expect(shown[1]).toBe(items[3]); // unchanged: expanded rows survive
+    expect(hasFilters({ ...DEFAULT_FILTERS, items: ['m1'] })).toBe(true);
+    expect(isFiltering({ ...DEFAULT_FILTERS, items: ['m1'] })).toBe(false);
+  });
+
+  it('applies the other filters inside the picked items, flat', () => {
+    expect(pick({ items: ['w2'], types: ['issue'] })).toEqual([`${W(3)}_root_${W(2)}_top`]);
+    expect(pick({ items: ['m2'], search: 'search' })).toEqual([]);
+  });
+
+  it('offers the milestones and epics of the tree', () => {
+    expect(itemOptions(items)).toEqual([
+      { value: 'm1', label: 'Release', section: 'Milestones' },
+      { value: 'm2', label: 'Later', section: 'Milestones' },
+      { value: 'w1', label: 'Payments', section: 'Epics' },
+      { value: 'w2', label: 'Search', section: 'Epics' },
+    ]);
+  });
+
+  it('filters by what needs attention, through the index', () => {
+    const late = task(W(5), { type: 'epic', name: 'Late', progress: 0, linearProgress: 50, children: [task(W(6))] });
+    const tree = [late, task(W(7), { name: 'Fine' })];
+    const index = attentionIndex(tree);
+    expect(applyFilters(tree, { ...DEFAULT_FILTERS, attention: ['late'] }, index).map((node) => node.id)).toEqual([W(5)]);
+    expect(applyFilters(tree, { ...DEFAULT_FILTERS, attention: ['noDates'] }, index)).toEqual([]);
   });
 });

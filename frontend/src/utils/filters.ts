@@ -1,29 +1,76 @@
 import { GanttTask, GanttTaskType, HealthStatus, Label } from '../types/gantt';
+import type { AttentionFlag, AttentionIndex } from './attention';
 import { HEALTH_LABELS } from './health';
 
-/** What the filter bar asks for: the types of items to show (all of them by default, none =
- * nothing), the labels they must carry (any of them), their health status (any of them),
+/** What the filter bar asks for: the milestones and epics to show (a portfolio, none = all),
+ * the types of items to show (all of them by default, none = nothing), the labels they must
+ * carry (any of them), their health status (any of them), what needs attention (any of it),
  * whether they must be blocked and a text their name must contain. */
 export interface Filters {
+  items: string[]; // compact IDs (`shortId`) of milestones and epics
   search: string;
   types: GanttTaskType[];
   labels: string[]; // label titles
   health: HealthStatus[];
+  attention: AttentionFlag[]; // see attention.ts
   blocked: boolean; // only items with an open blocker
 }
 
 export const ALL_TYPES: GanttTaskType[] = ['milestone', 'epic', 'issue'];
 
-export const DEFAULT_FILTERS: Filters = { search: '', types: ALL_TYPES, labels: [], health: [], blocked: false };
+export const DEFAULT_FILTERS: Filters = { items: [], search: '', types: ALL_TYPES, labels: [], health: [], attention: [], blocked: false };
 
+/** Whether filters other than the items are set: the chart is then a flat list. */
 export function isFiltering(filters: Filters): boolean {
   return (
     filters.search.trim() !== '' ||
     ALL_TYPES.some((type) => !filters.types.includes(type)) ||
     filters.labels.length > 0 ||
     filters.health.length > 0 ||
+    filters.attention.length > 0 ||
     filters.blocked
   );
+}
+
+/** Whether any filter is set, the items included. */
+export function hasFilters(filters: Filters): boolean {
+  return filters.items.length > 0 || isFiltering(filters);
+}
+
+const SHORT_PREFIXES: [string, string][] = [
+  ['m', 'gid://gitlab/Milestone/'],
+  ['w', 'gid://gitlab/WorkItem/'],
+];
+
+/** A milestone's or work item's GitLab ID, short enough for a link: "m123", "w456". */
+export function shortId(id: string): string | undefined {
+  const gid = canonicalId(id);
+  for (const [short, prefix] of SHORT_PREFIXES) {
+    if (gid.startsWith(prefix) && /^\d+$/.test(gid.slice(prefix.length))) return short + gid.slice(prefix.length);
+  }
+  return undefined;
+}
+
+/** The GitLab ID of a `shortId`, undefined when it isn't one. */
+export function fullId(short: string): string | undefined {
+  const match = /^([mw])(\d+)$/.exec(short);
+  return match ? SHORT_PREFIXES.find(([prefix]) => prefix === match[1])![1] + match[2] : undefined;
+}
+
+/** The top-level rows of the picked milestones, then of the picked epics (the tree has one per
+ * epic: the root or its `_root_` copy), in tree order and unchanged: a portfolio stays a tree.
+ * Picked items missing from the tree (closed, deleted, out of the period) are skipped. */
+export function selectItems(tree: GanttTask[], items: string[]): GanttTask[] {
+  const picked = new Set(items);
+  const kept = (type: GanttTaskType) => tree.filter((node) => node.type === type && picked.has(shortId(node.id) ?? ''));
+  return [...kept('milestone'), ...kept('epic')];
+}
+
+/** The options of the Items menu: the milestones and the epics of the tree. */
+export function itemOptions(tree: GanttTask[]): FilterOption[] {
+  const option = (section: string) => (node: GanttTask) => ({ value: shortId(node.id)!, label: node.name, section });
+  const of = (type: GanttTaskType) => tree.filter((node) => node.type === type && shortId(node.id));
+  return [...of('milestone').map(option('Milestones')), ...of('epic').map(option('Epics'))];
 }
 
 /** Lower case, without accents: "Élan" and "elan" match. */
@@ -72,17 +119,24 @@ export const HEALTH_OPTIONS: FilterOption[] = (['atRisk', 'needsAttention', 'onT
   color: `var(--health-${status === 'atRisk' ? 'at-risk' : status === 'needsAttention' ? 'needs-attention' : 'on-track'})`,
 }));
 
-/** The items to show. Without filters, the tree itself. Otherwise a flat list of the matching
- * milestones, then epics, then issues, each shown once with its whole content: milestones
- * and epics through their top-level row (the tree has one per epic), issues through a
- * `_top` copy of their first occurrence. */
-export function applyFilters(tree: GanttTask[], filters: Filters): GanttTask[] {
+/** The items to show. With picked items (a portfolio), only them, with their content. Without
+ * other filters, that tree as is. Otherwise a flat list of the matching milestones, then
+ * epics, then issues, each shown once with its whole content: milestones and epics through
+ * their top-level row (the tree has one per epic), issues through a `_top` copy of their first
+ * occurrence. The attention flags need the `attentionIndex` of the tree. */
+export function applyFilters(base: GanttTask[], filters: Filters, attention?: AttentionIndex): GanttTask[] {
+  const tree = filters.items.length > 0 ? selectItems(base, filters.items) : base;
   if (!isFiltering(filters)) return tree;
   const search = normalizeText(filters.search.trim());
+  const flagged = (node: GanttTask) => {
+    const id = canonicalId(node.id);
+    return filters.attention.some((flag) => attention?.get(flag)?.has(id));
+  };
   const matches = (node: GanttTask) =>
     filters.types.includes(node.type) &&
     (filters.labels.length === 0 || hasLabel(node, filters.labels)) &&
     (filters.health.length === 0 || hasHealth(node, filters.health)) &&
+    (filters.attention.length === 0 || flagged(node)) &&
     (!filters.blocked || !!node.blockedBy?.some((ref) => !ref.closed)) &&
     (!search || normalizeText(node.name).includes(search));
 

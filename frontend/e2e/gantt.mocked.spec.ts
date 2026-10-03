@@ -1005,6 +1005,10 @@ test.describe('Gantt (mocked API)', () => {
       await page.mouse.wheel(0, deltaY);
     }
 
+    // Tall enough for the collapsed rows of tallTree to leave room under the card, below the
+    // toolbar, filter bar, attention summary and legend.
+    const ROOMY = { width: 1280, height: 820 };
+
     /** Distance between the bottom of the chart card and the bottom of the window. */
     async function gapBelowCard(page: Page) {
       const card = (await page.locator('.gantt-chart').boundingBox())!;
@@ -1013,6 +1017,7 @@ test.describe('Gantt (mocked API)', () => {
 
     test('the chart grows with its rows, up to the window height', async ({ page }) => {
       await page.clock.setFixedTime(new Date('2026-10-10T12:00:00'));
+      await page.setViewportSize(ROOMY);
       await mockApi(page, { body: tallTree });
       await page.goto('/');
       await expect(page.getByTitle('Big epic')).toBeVisible();
@@ -1056,6 +1061,7 @@ test.describe('Gantt (mocked API)', () => {
 
     test('collapsing rows after scrolling down brings the first rows back', async ({ page }) => {
       await page.clock.setFixedTime(new Date('2026-10-10T12:00:00'));
+      await page.setViewportSize(ROOMY);
       await mockApi(page, { body: tallTree });
       await page.goto('/');
       await page.getByTitle('Big epic').locator('..').getByRole('button', { name: 'Expand' }).click();

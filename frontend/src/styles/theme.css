@@ -564,3 +564,37 @@ button { font: inherit; color: inherit; }
 .label-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2); }
 .menu-empty { padding: 8px; font-size: 13px; color: var(--text-secondary); text-align: center; }
 .menu-footer { margin-top: 5px; padding-top: 5px; border-top: 0.5px solid var(--separator); }
+
+/* Copy link: a plain toolbar-style button at the end of the filter bar */
+.copy-link { margin-left: auto; }
+.copy-link[data-state='copied'] { color: var(--on-track); }
+.copy-link[data-state='failed'] { color: var(--text-secondary); }
+
+/* Portfolio menu: a pop-up with inline forms (save, rename, delete) */
+.portfolio-popover { width: 280px; }
+.menu-item:disabled { color: var(--text-tertiary); background: none; cursor: default; }
+.menu-form { display: flex; flex-direction: column; gap: 8px; padding: 2px 0; }
+.menu-form .menu-header { padding-bottom: 0; }
+.menu-form .menu-search { margin: 0; background: var(--fill); }
+.menu-problem { padding: 0 8px; font-size: 12px; color: var(--red); }
+.menu-confirm { padding: 6px 8px 0; font-size: 13px; }
+.menu-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 4px 4px 2px; }
+.button.destructive { background: var(--red); color: #fff; }
+.button.destructive:hover { background: color-mix(in srgb, var(--red) 88%, #000); }
+
+/* Attention summary: one chip per kind of problem, pressing one lists those items */
+.summary-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.summary-empty { font-size: 12px; color: var(--text-secondary); }
+.summary-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 0; border-radius: 7px; background: var(--fill); color: var(--text-secondary);
+  font-size: 13px; cursor: pointer; transition: background 0.15s var(--ease), transform 0.1s var(--ease);
+}
+.summary-chip:hover { background: var(--fill-pressed); color: var(--text); }
+.summary-chip:active { transform: scale(0.97); }
+.summary-chip[aria-pressed='true'] { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
+.summary-count { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.summary-chip[aria-pressed='true'] .summary-count { color: inherit; }
+.summary-chip .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+.summary-chip .health, .summary-chip .row-blocked, .summary-chip .row-warning { cursor: inherit; }
+.summary-hatch { width: 14px; height: 8px; }
