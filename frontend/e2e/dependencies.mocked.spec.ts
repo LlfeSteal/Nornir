@@ -177,11 +177,11 @@ test('the dialog brings the critical path forward and dims the rest', async ({ p
   await expect(barOf('Checkout')).not.toHaveAttribute('data-critical');
   await expect(barOf('Checkout')).toHaveCSS('opacity', '0.35');
 
-  // One critical arrow, thicker, in the strongest neutral.
+  // One critical arrow, a little thicker, in the strongest neutral.
   const arrow = sheet.locator('.dependency-links > path[data-critical]');
   await expect(arrow).toHaveCount(1);
   await expect(arrow).toHaveCSS('stroke', 'rgb(29, 29, 31)');
-  await expect(arrow).toHaveCSS('stroke-width', '2px');
+  await expect(arrow).toHaveCSS('stroke-width', '1.75px');
   await expect(arrow).toHaveCSS('opacity', '1');
   await expect(sheet.locator('.dependency-links > path:not([data-critical])').first()).toHaveCSS('opacity', '0.35');
 
@@ -245,6 +245,73 @@ test('the critical path goes from user story to user story, dashed through epics
   const label = (await barOf('US 6').locator('.bar-label').boundingBox())!;
   await page.mouse.move(label.x + label.width / 2, label.y + label.height / 2);
   await expect(page.locator('.gantt-tooltip .critical-note')).toHaveText('On the critical path, after US 10 (through Feature 4 → Feature 1)');
+});
+
+test('the critical path can be shown alone', async ({ page }) => {
+  await mockApi(page, { body: nestedDependencyTree });
+  await page.reload();
+  await listRow(page, '[Milestone] Milestone 1').getByRole('button', { name: 'View 7 dependencies' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Dependencies of [Milestone] Milestone 1' });
+  const toggle = sheet.getByRole('button', { name: 'Critical path only' });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(sheet.locator('.dependency-links > path')).toHaveCount(8);
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(sheet.locator('.dependency-links > path')).toHaveCount(3);
+  await expect(sheet.locator('.dependency-links > path:not([data-critical])')).toHaveCount(0);
+  // The path's user stories, under the parents they sit in (context rows).
+  const rows = sheet.locator('.task-list-row');
+  expect(await rows.evaluateAll((list) => list.map((row) => [row.querySelector('.task-list-cell')!.getAttribute('title'), row.getAttribute('data-depth'), row.getAttribute('data-context')]))).toEqual([
+    ['Capability 2', '0', 'true'],
+    ['Feature 1', '1', 'true'],
+    ['US 6', '2', null],
+    ['US 7', '2', null],
+    ['US 9', '0', null],
+    ['US 10', '0', null],
+  ]);
+  // The counts stay those of every dependency; the legend drops the arrows not shown.
+  await expect(sheet.locator('.dependency-dialog-title p')).toHaveText('7 links · 8 items · critical path of 4');
+  const legend = sheet.getByLabel('Dependencies legend');
+  await expect(legend).toContainText('Critical path');
+  await expect(legend).not.toContainText('Blocks');
+  await expect(legend).not.toContainText('Starts before its blocker ends');
+
+  await toggle.click();
+  await expect(sheet.locator('.dependency-links > path')).toHaveCount(8);
+  await expect(rows).toHaveCount(9);
+  await expect(legend).toContainText('Blocks');
+});
+
+test('arrows from different blockers never run down the same line', async ({ page }) => {
+  await mockApi(page, { body: nestedDependencyTree });
+  await page.reload();
+  await listRow(page, '[Milestone] Milestone 1').getByRole('button', { name: 'View 7 dependencies' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Dependencies of [Milestone] Milestone 1' });
+  const arrows = sheet.locator('.dependency-links > path');
+  await expect(arrows).toHaveCount(8);
+  // Each arrow's polyline: its start (the blocker's end), then its corners (the curves' control points).
+  const lines = await arrows.evaluateAll((paths) =>
+    paths.map((path) => [...path.getAttribute('d')!.matchAll(/[MQ]([\d.-]+),([\d.-]+)/g)].map((m) => [Number(m[1]), Number(m[2])])),
+  );
+  const verticals = lines.map((points) => ({
+    from: points[0].join(','),
+    x: points[1][0],
+    low: Math.min(points[1][1], points[2][1]),
+    high: Math.max(points[1][1], points[2][1]),
+  }));
+  const clashes = verticals.flatMap((a, i) =>
+    verticals.slice(i + 1).filter((b) => a.from !== b.from && Math.abs(a.x - b.x) < 1 && a.low < b.high && b.low < a.high).map((b) => [a, b]),
+  );
+  expect(clashes).toEqual([]);
+
+  // Small arrowheads, whatever the stroke; a quiet today line.
+  for (const marker of await sheet.locator('.dependency-links marker').all()) {
+    await expect(marker).toHaveAttribute('markerUnits', 'userSpaceOnUse');
+    await expect(marker).toHaveAttribute('markerWidth', '6');
+  }
+  await expect(sheet.locator('.today-line')).toHaveCSS('opacity', '0.5');
+  await expect(page.locator('main .today-line')).toHaveCSS('opacity', '1');
 });
 
 test('the main chart dims nothing', async ({ page }) => {

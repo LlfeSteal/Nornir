@@ -1,6 +1,6 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GanttTask } from '../types/gantt';
-import { DependencyIndex, dependencySubgraph } from '../utils/dependencies';
+import { criticalOnly, DependencyIndex, dependencySubgraph } from '../utils/dependencies';
 import { ViewMode } from '../utils/timeline';
 import { GanttChart } from './GanttChart';
 import { SegmentedControl } from './SegmentedControl';
@@ -21,8 +21,10 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
   const titleId = useId();
   const [viewMode, setViewMode] = useState(initialViewMode);
   const graph = useMemo(() => dependencySubgraph(index, node), [index, node]);
+  const [onlyCritical, setOnlyCritical] = useState(false);
+  const shown = useMemo(() => (onlyCritical && graph.critical > 0 ? criticalOnly(graph) : graph), [graph, onlyCritical]);
   // The top-level rows hold the others.
-  const data = useMemo(() => graph.rows.filter((row) => row.depth === 0).map((row) => row.node), [graph]);
+  const data = useMemo(() => shown.rows.filter((row) => row.depth === 0).map((row) => row.node), [shown]);
   const items = graph.rows.filter((row) => !row.dependency?.context).length;
   // The chart scrolls inside the sheet: never unbounded (see GanttChart).
   const height = Math.max(240, Math.floor(window.innerHeight * 0.7));
@@ -71,12 +73,17 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
             {graph.critical > 0 && ` · critical path of ${graph.critical}`}
           </p>
         </div>
+        {graph.critical > 0 && (
+          <button type="button" className="button" aria-pressed={onlyCritical} onClick={() => setOnlyCritical(!onlyCritical)}>
+            Critical path only
+          </button>
+        )}
         <SegmentedControl label="Time scale" options={VIEW_MODES} value={viewMode} onChange={setViewMode} />
         <button type="button" className="button" onClick={() => dialog.current?.close()}>
           Close
         </button>
       </header>
-      {open && <GanttChart data={data} viewMode={viewMode} range={null} dependencies={graph} height={height} />}
+      {open && <GanttChart data={data} viewMode={viewMode} range={null} dependencies={shown} height={height} />}
       <div className="legend" aria-label="Dependencies legend">
         {graph.critical > 0 && (
           <span className="legend-item">
@@ -90,14 +97,18 @@ export const DependencyDialog: React.FC<Props> = ({ node, index, viewMode: initi
             Through parent epics
           </span>
         )}
-        <span className="legend-item">
-          <span className="legend-arrow" />
-          Blocks
-        </span>
-        <span className="legend-item">
-          <span className="legend-arrow conflict" />
-          Starts before its blocker ends
-        </span>
+        {!onlyCritical && (
+          <>
+            <span className="legend-item">
+              <span className="legend-arrow" />
+              Blocks
+            </span>
+            <span className="legend-item">
+              <span className="legend-arrow conflict" />
+              Starts before its blocker ends
+            </span>
+          </>
+        )}
         <span className="legend-item">
           <span className="legend-swatch linked" />
           Elsewhere or outside the group

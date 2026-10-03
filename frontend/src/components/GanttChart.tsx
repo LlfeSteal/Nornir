@@ -17,7 +17,7 @@ import { clipBar, DateRange } from '../utils/period';
 import { missingDatesMessage } from '../utils/schedule';
 import { rowHealth } from '../utils/health';
 import { overrun } from '../utils/overrun';
-import { arrowPath, blockedSpan, DependencyLink } from '../utils/dependencies';
+import { ARROW_GAP, arrowLanes, arrowPath, blockedSpan, DependencyLink } from '../utils/dependencies';
 
 // The Gantt chart, in plain HTML and CSS. It holds thousands of rows, so only the rows (and
 // calendar columns) on screen are rendered: one native scroll container moves everything,
@@ -392,17 +392,25 @@ function DependencyLinks({
   height: number;
 }) {
   const marker = useId().replace(/:/g, ''); // React's ":r1:" breaks url(#…) references
-  const indexes = useMemo(() => new Map(rows.map((row, index) => [row.node.id, index])), [rows]);
+  // Every arrow at once, so the lanes don't change while scrolling: one pass over the links.
+  const arrows = useMemo(() => {
+    const indexes = new Map(rows.map((row, index) => [row.node.id, index]));
+    const ends = links.flatMap((link) => {
+      const from = indexes.get(link.from);
+      const to = indexes.get(link.to);
+      if (from === undefined || to === undefined) return [];
+      const x1 = timeline.x(clipBar(rows[from].node, range).end);
+      const x2 = timeline.x(clipBar(rows[to].node, range).start);
+      const y1 = from * ROW_HEIGHT + ROW_HEIGHT / 2;
+      const y2 = to * ROW_HEIGHT + ROW_HEIGHT / 2;
+      return [{ link, from, to, x1, x2, y1, y2 }];
+    });
+    const offsets = arrowLanes(ends.map((end) => ({ from: end.link.from, x: end.x1 + ARROW_GAP, y1: end.y1, y2: end.y2 })));
+    return ends.map((end, i) => ({ ...end, d: arrowPath(end.x1, end.y1, end.x2, end.y2, ROW_HEIGHT, offsets[i]) }));
+  }, [rows, links, timeline, range]);
   const paths: { key: string; d: string; conflict: boolean; critical: boolean; derived: boolean; markerId: string }[] = [];
-  for (const link of links) {
-    const from = indexes.get(link.from);
-    const to = indexes.get(link.to);
-    if (from === undefined || to === undefined || Math.max(from, to) < first || Math.min(from, to) >= last) continue;
-    const x1 = timeline.x(clipBar(rows[from].node, range).end);
-    const x2 = timeline.x(clipBar(rows[to].node, range).start);
-    const y1 = from * ROW_HEIGHT + ROW_HEIGHT / 2;
-    const y2 = to * ROW_HEIGHT + ROW_HEIGHT / 2;
-    const d = arrowPath(x1, y1, x2, y2, ROW_HEIGHT);
+  for (const { link, from, to, d } of arrows) {
+    if (Math.max(from, to) < first || Math.min(from, to) >= last) continue;
     // The critical path keeps its color when it conflicts: the bar's hatch shows the conflict.
     const kind = link.critical ? 'k' : link.conflict ? 'c' : 'n';
     paths.push({
@@ -426,8 +434,9 @@ function DependencyLinks({
             viewBox="0 0 8 8"
             refX="7"
             refY="4"
-            markerWidth="8"
-            markerHeight="8"
+            markerWidth="6"
+            markerHeight="6"
+            markerUnits="userSpaceOnUse"
             orient="auto"
             className={kind === 'c' ? 'conflict' : kind === 'k' ? 'critical' : undefined}
           >

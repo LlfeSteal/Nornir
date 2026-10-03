@@ -310,17 +310,78 @@ export function criticalPath(index: DependencyIndex, root: GanttTask): { ids: st
 
 export const ARROW_GAP = 10; // px, horizontal run out of a bar and into the next
 const ARROW_LANE = 4; // px, from the row's edge: where an arrow going round runs, off the bars
+const ARROW_RADIUS = 4; // px, rounded corners
+export const ARROW_SPACING = 4; // px, between the verticals of arrows turning at the same place
 
 /** The SVG path of an arrow from a blocker's end (x1, y1) to the start of what it blocks (x2, y2),
  * the middles of their rows. With room between the bars: out, down (or up), in. Otherwise it goes
  * round: down (or up) at the blocker's end to a lane inside the target's row, off its bar — under
  * its top coming from above, over its bottom coming from below — then back to the target's
  * start. Each arrow runs along its own target's row: two targets starting together share
- * nothing. */
-export function arrowPath(x1: number, y1: number, x2: number, y2: number, rowHeight: number): string {
-  if (x2 - x1 >= 2 * ARROW_GAP) return `M${x1},${y1} H${x1 + ARROW_GAP} V${y2} H${x2}`;
+ * nothing. `offset` moves the first vertical right (its lane, see `arrowLanes`); with room, it
+ * stays short of the target. Corners are rounded. */
+export function arrowPath(x1: number, y1: number, x2: number, y2: number, rowHeight: number, offset = 0): string {
+  const turn = x1 + ARROW_GAP + offset;
+  if (x2 - x1 >= 2 * ARROW_GAP) {
+    const x = Math.max(x1 + ARROW_GAP, Math.min(turn, x2 - ARROW_GAP / 2));
+    return roundedPath([[x1, y1], [x, y1], [x, y2], [x2, y2]]);
+  }
   const lane = y2 + (y2 > y1 ? -1 : 1) * (rowHeight / 2 - ARROW_LANE);
-  return `M${x1},${y1} h${ARROW_GAP} V${lane} H${x2 - ARROW_GAP} V${y2} H${x2}`;
+  return roundedPath([[x1, y1], [turn, y1], [turn, lane], [x2 - ARROW_GAP, lane], [x2 - ARROW_GAP, y2], [x2, y2]]);
+}
+
+const num = (value: number) => Math.round(value * 100) / 100;
+
+/** An orthogonal polyline as an SVG path, each corner rounded (at most half its shorter side). */
+function roundedPath(points: [number, number][]): string {
+  const kept = points.filter((point, i) => i === 0 || point[0] !== points[i - 1][0] || point[1] !== points[i - 1][1]);
+  let d = `M${num(kept[0][0])},${num(kept[0][1])}`;
+  for (let i = 1; i < kept.length - 1; i++) {
+    const [px, py] = kept[i - 1];
+    const [x, y] = kept[i];
+    const [nx, ny] = kept[i + 1];
+    const before = Math.abs(x - px) + Math.abs(y - py);
+    const after = Math.abs(nx - x) + Math.abs(ny - y);
+    const r = Math.min(ARROW_RADIUS, before / 2, after / 2);
+    const inX = x - Math.sign(x - px) * r;
+    const inY = y - Math.sign(y - py) * r;
+    const outX = x + Math.sign(nx - x) * r;
+    const outY = y + Math.sign(ny - y) * r;
+    d += ` L${num(inX)},${num(inY)} Q${num(x)},${num(y)} ${num(outX)},${num(outY)}`;
+  }
+  const [lx, ly] = kept[kept.length - 1];
+  return `${d} L${num(lx)},${num(ly)}`;
+}
+
+/** The lane of each arrow's first vertical (at `x`, from `y1` to `y2`), as an offset for
+ * `arrowPath`: arrows turning at the same place (within `ARROW_SPACING`) whose verticals overlap
+ * get lanes `ARROW_SPACING` apart, so their lines don't merge. Arrows from the same blocker
+ * (`from`) share a lane: one trunk fanning out. Deterministic. */
+export function arrowLanes(arrows: { from: string; x: number; y1: number; y2: number }[]): number[] {
+  const offsets = arrows.map(() => 0);
+  const order = arrows.map((_, i) => i).sort((a, b) => arrows[a].x - arrows[b].x || a - b);
+  let start = 0;
+  while (start < order.length) {
+    let end = start + 1;
+    while (end < order.length && arrows[order[end]].x - arrows[order[end - 1]].x < ARROW_SPACING) end++;
+    const group = order.slice(start, end).sort((a, b) => {
+      const x = arrows[a];
+      const y = arrows[b];
+      return Math.min(x.y1, x.y2) - Math.min(y.y1, y.y2) || x.from.localeCompare(y.from) || a - b;
+    });
+    const lanes: { from: string; low: number; high: number }[][] = [];
+    for (const i of group) {
+      const { from, y1, y2 } = arrows[i];
+      const low = Math.min(y1, y2);
+      const high = Math.max(y1, y2);
+      let lane = lanes.findIndex((spans) => spans.every((span) => span.from === from || span.high <= low || high <= span.low));
+      if (lane === -1) lane = lanes.push([]) - 1;
+      lanes[lane].push({ from, low, high });
+      offsets[i] = lane * ARROW_SPACING;
+    }
+    start = end;
+  }
+  return offsets;
 }
 
 function externalTask(ref: DependencyRef): GanttTask {
@@ -465,4 +526,31 @@ export function dependencySubgraph(index: DependencyIndex, node: GanttTask): Dep
     to.info.criticalVia = `after ${from.name} (through ${name(step.edge.blocker)} → ${name(step.edge.blocked)})`;
   }
   return { rows, links, critical: critical.ids.length };
+}
+
+/** The dialog's graph reduced to its critical path: its items, under their parents (shown as
+ * context), and the arrows between them. */
+export function criticalOnly(graph: DependencySubgraph): DependencySubgraph {
+  const byId = new Map(graph.rows.map((row) => [row.node.id, row]));
+  const kept = new Set<string>();
+  for (const row of graph.rows) {
+    if (!row.dependency?.critical) continue;
+    for (let id: string | undefined = row.node.id; id && !kept.has(id); id = byId.get(id)?.parent?.id) kept.add(id);
+  }
+  // The rows are depth first: a parent is cloned before its children.
+  const clones = new Map<string, GanttTask>();
+  const roots: GanttTask[] = [];
+  for (const row of graph.rows) {
+    if (!kept.has(row.node.id)) continue;
+    const clone = { ...row.node, children: undefined };
+    clones.set(clone.id, clone);
+    const parent = row.parent && clones.get(row.parent.id);
+    if (parent) parent.children = [...(parent.children ?? []), clone];
+    else roots.push(clone);
+  }
+  const rows = visibleRows(roots, kept).map((row) => {
+    const info = byId.get(row.node.id)!.dependency;
+    return { ...row, dependency: info?.critical ? info : { linked: false, external: false, ...info, context: true } };
+  });
+  return { rows, links: graph.links.filter((link) => link.critical), critical: graph.critical };
 }

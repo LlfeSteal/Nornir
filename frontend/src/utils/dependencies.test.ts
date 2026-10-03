@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { DependencyRef, GanttTask } from '../types/gantt';
 import {
+  arrowLanes,
   arrowPath,
   blockedMessage,
   blockedSpan,
   blockerConflicts,
   conflictMessage,
+  criticalOnly,
   criticalPath,
   dependencyCount,
   dependencyIndex,
@@ -311,26 +313,114 @@ describe('criticalPath', () => {
   });
 });
 
+describe('criticalOnly', () => {
+  it('keeps the critical path under its parents, and only its arrows', () => {
+    // m › cap › f1 (u1, u2), f2 (u3): u1 blocks u3 (u3 ends last), ext blocks u2 (off the path).
+    const u1 = task('u1', { start: '2026-10-01', end: '2026-10-05', blocking: [ref('u3')] });
+    const u2 = task('u2', { start: '2026-10-01', end: '2026-10-08', blockedBy: [ref('ext', { external: true, end: '2026-09-30' })] });
+    const u3 = task('u3', { start: '2026-10-06', end: '2026-10-20', blockedBy: [ref('u1')] });
+    const f1 = task('f1', { type: 'epic', children: [u1, u2] });
+    const f2 = task('f2', { type: 'epic', children: [u3] });
+    const m = task('m', { type: 'milestone', children: [task('cap', { type: 'epic', children: [f1, f2] })] });
+    const graph = dependencySubgraph(dependencyIndex([m], false), m);
+    expect(graph.rows.map((row) => row.node.id)).toEqual(['ext', 'cap', 'f1', 'u1', 'u2', 'f2', 'u3']);
+
+    const only = criticalOnly(graph);
+    expect(only.rows.map((row) => [row.node.id, row.depth, row.parent?.id, !!row.dependency?.context])).toEqual([
+      ['cap', 0, undefined, true],
+      ['f1', 1, 'cap', true],
+      ['u1', 2, 'f1', false],
+      ['f2', 1, 'cap', true],
+      ['u3', 2, 'f2', false],
+    ]);
+    // The tree lines follow the rows left: u1 (before u2 above) is now the last child of f1.
+    expect(only.rows.find((row) => row.node.id === 'u1')).toMatchObject({ isLast: true, guides: [true] });
+    expect(only.rows.every((row) => row.dependency?.critical || row.dependency?.context)).toBe(true);
+    expect(only.links).toEqual([{ from: 'u1', to: 'u3', conflict: false, critical: true }]);
+    expect(only.critical).toBe(graph.critical);
+    // The full graph is left alone.
+    expect(graph.rows).toHaveLength(7);
+  });
+});
+
 describe('arrowPath', () => {
   const ROW = 40;
   const mid = (index: number) => index * ROW + ROW / 2;
+  // The polyline behind a rounded path: its start, each corner (the curves' control points), its end.
+  const corners = (d: string) => {
+    const points = [...d.matchAll(/M([\d.-]+),([\d.-]+)|Q([\d.-]+),([\d.-]+)/g)].map((m) => (m[1] ? `${m[1]},${m[2]}` : `${m[3]},${m[4]}`));
+    const end = d.match(/L([\d.-]+),([\d.-]+)$/)!;
+    return [...points, `${end[1]},${end[2]}`].join(' ');
+  };
 
-  it('goes straight across when there is room between the bars', () => {
-    expect(arrowPath(100, mid(0), 150, mid(2), ROW)).toBe('M100,20 H110 V100 H150');
+  it('goes straight across when there is room between the bars, with rounded corners', () => {
+    expect(arrowPath(100, mid(0), 150, mid(2), ROW)).toBe('M100,20 L106,20 Q110,20 110,24 L110,96 Q110,100 114,100 L150,100');
   });
 
   it('goes round in a lane of the target row, off its bar', () => {
     // Down: under the target row's top (its bar starts 8 px down).
-    expect(arrowPath(200, mid(0), 150, mid(2), ROW)).toBe('M200,20 h10 V84 H140 V100 H150');
+    expect(corners(arrowPath(200, mid(0), 150, mid(2), ROW))).toBe('200,20 210,20 210,84 140,84 140,100 150,100');
     // Up: over its bottom.
-    expect(arrowPath(200, mid(3), 150, mid(1), ROW)).toBe('M200,140 h10 V76 H140 V60 H150');
+    expect(corners(arrowPath(200, mid(3), 150, mid(1), ROW))).toBe('200,140 210,140 210,76 140,76 140,60 150,60');
   });
 
   it('keeps apart two targets starting together in adjacent rows', () => {
     // One reached from below (row 4), the other from above (row 5): no shared segment.
-    const intoFour = arrowPath(300, mid(7), 150, mid(4), ROW);
-    const intoFive = arrowPath(250, mid(2), 150, mid(5), ROW);
-    expect(intoFour).toBe('M300,300 h10 V196 H140 V180 H150');
-    expect(intoFive).toBe('M250,100 h10 V204 H140 V220 H150');
+    expect(corners(arrowPath(300, mid(7), 150, mid(4), ROW))).toBe('300,300 310,300 310,196 140,196 140,180 150,180');
+    expect(corners(arrowPath(250, mid(2), 150, mid(5), ROW))).toBe('250,100 260,100 260,204 140,204 140,220 150,220');
+  });
+
+  it('moves the first vertical to its lane, short of the target', () => {
+    expect(corners(arrowPath(100, mid(0), 150, mid(2), ROW, 8))).toBe('100,20 118,20 118,100 150,100');
+    // Not past the target's start minus half a gap.
+    expect(corners(arrowPath(100, mid(0), 130, mid(2), ROW, 20))).toBe('100,20 125,20 125,100 130,100');
+    // Going round, the lane moves the turn at the blocker's end.
+    expect(corners(arrowPath(200, mid(0), 150, mid(2), ROW, 4))).toBe('200,20 214,20 214,84 140,84 140,100 150,100');
+  });
+
+  it('rounds short segments less', () => {
+    // A 2 px step down: corners of 1 px.
+    expect(arrowPath(0, 0, 40, 2, ROW)).toBe('M0,0 L9,0 Q10,0 10,1 L10,1 Q10,2 11,2 L40,2');
+  });
+});
+
+describe('arrowLanes', () => {
+  it('puts overlapping verticals of different blockers in different lanes', () => {
+    expect(
+      arrowLanes([
+        { from: 'a', x: 100, y1: 20, y2: 100 },
+        { from: 'b', x: 101, y1: 60, y2: 140 },
+        { from: 'c', x: 102, y1: 0, y2: 180 },
+      ]),
+    ).toEqual([4, 8, 0]); // by top: c, then a, then b
+  });
+
+  it('shares a lane between verticals that do not overlap, or at different places', () => {
+    expect(
+      arrowLanes([
+        { from: 'a', x: 100, y1: 20, y2: 60 },
+        { from: 'b', x: 100, y1: 60, y2: 100 },
+        { from: 'c', x: 200, y1: 20, y2: 100 },
+      ]),
+    ).toEqual([0, 0, 0]);
+  });
+
+  it('keeps the arrows of one blocker on one trunk', () => {
+    expect(
+      arrowLanes([
+        { from: 'a', x: 100, y1: 20, y2: 100 },
+        { from: 'a', x: 100, y1: 20, y2: 180 },
+        { from: 'b', x: 100, y1: 60, y2: 140 },
+      ]),
+    ).toEqual([0, 0, 4]);
+  });
+
+  it('does not depend on the input order', () => {
+    const arrows = [
+      { from: 'a', x: 100, y1: 20, y2: 100 },
+      { from: 'b', x: 100, y1: 20, y2: 100 },
+    ];
+    expect(arrowLanes(arrows)).toEqual([0, 4]);
+    expect(arrowLanes([...arrows].reverse())).toEqual([4, 0]);
   });
 });
