@@ -1,14 +1,14 @@
 import { useCallback, useState } from 'react';
 
-// Portfolios: named sets of milestones and epics (compact IDs, see `shortId`), one of them
-// optionally the default, applied when the app opens without a view in its URL. They are the
-// only filters kept in the browser (localStorage); a link shares a portfolio's items, never
-// its name.
+// Portfolios: named saved views — filters, period and time scale, stored as the view's
+// `viewKey` (a query string, see urlState.ts) — one of them optionally the default, applied
+// when the app opens without a view in its URL. They are the only filters kept in the browser
+// (localStorage); a link shares the view, never the portfolio's name.
 
 export interface Portfolio {
   id: string;
   name: string;
-  items: string[];
+  query: string; // viewKey of the view
 }
 
 export interface Portfolios {
@@ -31,8 +31,7 @@ export function parsePortfolios(text: string | null): Portfolios {
         typeof p.id === 'string' &&
         typeof p.name === 'string' &&
         p.name.trim() !== '' &&
-        Array.isArray(p.items) &&
-        p.items.every((item) => typeof item === 'string'),
+        typeof p.query === 'string',
     );
     const defaultId = (value as Portfolios).defaultId;
     return { portfolios, defaultId: portfolios.some((p) => p.id === defaultId) ? defaultId : undefined };
@@ -41,12 +40,9 @@ export function parsePortfolios(text: string | null): Portfolios {
   }
 }
 
-const key = (items: string[]) => [...new Set(items)].sort().join(',');
-const sameItems = (a: string[], b: string[]) => key(a) === key(b);
-
-/** The saved portfolio holding exactly these items (in any order), if any. */
-export function matchingPortfolio(state: Portfolios, items: string[]): Portfolio | undefined {
-  return items.length === 0 ? undefined : state.portfolios.find((p) => sameItems(p.items, items));
+/** The saved portfolio showing exactly this view (its `viewKey`), if any. */
+export function matchingPortfolio(state: Portfolios, key: string): Portfolio | undefined {
+  return state.portfolios.find((p) => p.query === key);
 }
 
 /** Why a name can't be used, or undefined: names are required and unique (ignoring case). */
@@ -65,8 +61,8 @@ export function renamePortfolio(state: Portfolios, id: string, name: string): Po
   return { ...state, portfolios: state.portfolios.map((p) => (p.id === id ? { ...p, name: name.trim() } : p)) };
 }
 
-export function updateItems(state: Portfolios, id: string, items: string[]): Portfolios {
-  return { ...state, portfolios: state.portfolios.map((p) => (p.id === id ? { ...p, items } : p)) };
+export function updateView(state: Portfolios, id: string, query: string): Portfolios {
+  return { ...state, portfolios: state.portfolios.map((p) => (p.id === id ? { ...p, query } : p)) };
 }
 
 export function deletePortfolio(state: Portfolios, id: string): Portfolios {

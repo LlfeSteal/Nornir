@@ -17,24 +17,26 @@ interface Props {
   filters: Filters;
   onChange: (filters: Filters) => void;
   labels: FilterOption[];
-  items: FilterOption[]; // the milestones and epics a portfolio can hold
   portfolios: Portfolios;
   onPortfoliosChange: (change: (state: Portfolios) => Portfolios) => void;
+  viewKey: string; // the view shown, as a portfolio stores it
+  onApplyView: (query: string | undefined) => void; // a portfolio's view, or undefined: no filters
   activePortfolio?: string;
   onActivePortfolioChange: (id: string | undefined) => void;
   shareLink: () => string; // the URL of the view, for Copy link
 }
 
-/** Picks the items to show: a portfolio (named set of milestones and epics, picked in Items),
- * search field, item types (all pressed by default, none = nothing), labels, health status and
- * blocked items; then copies a link to the view. */
+/** Picks the items to show: a portfolio (a named saved view), search field, item types (all
+ * pressed by default, none = nothing), labels, health status and blocked items; then copies a
+ * link to the view. */
 export const FilterBar: React.FC<Props> = ({
   filters,
   onChange,
   labels,
-  items,
   portfolios,
   onPortfoliosChange,
+  viewKey,
+  onApplyView,
   activePortfolio,
   onActivePortfolioChange,
   shareLink,
@@ -50,18 +52,10 @@ export const FilterBar: React.FC<Props> = ({
       <PortfolioMenu
         portfolios={portfolios}
         onPortfoliosChange={onPortfoliosChange}
-        items={filters.items}
-        onItemsChange={(values) => onChange({ ...filters, items: values })}
+        currentKey={viewKey}
+        onApply={onApplyView}
         activeId={activePortfolio}
         onActiveChange={onActivePortfolioChange}
-      />
-      <FilterMenu
-        label="Items"
-        plural="items"
-        options={items}
-        selected={filters.items}
-        onChange={(values) => onChange({ ...filters, items: values })}
-        emptyText="No milestones or epics"
       />
       <div className="search-field">
         <SearchIcon size={14} />
@@ -125,8 +119,7 @@ export const FilterBar: React.FC<Props> = ({
         Blocked
       </button>
       {isFiltering(filters) && (
-        // The portfolio stays: it has its own "All items".
-        <button type="button" className="button plain" onClick={() => onChange({ ...DEFAULT_FILTERS, items: filters.items })}>
+        <button type="button" className="button plain" onClick={() => onChange(DEFAULT_FILTERS)}>
           Clear
         </button>
       )}
@@ -135,7 +128,7 @@ export const FilterBar: React.FC<Props> = ({
   );
 };
 
-/** Copies the link of the view (period, scale, filters, portfolio items) to the clipboard. */
+/** Copies the link of the view (period, scale, filters) to the clipboard. */
 const CopyLinkButton: React.FC<{ link: () => string }> = ({ link }) => {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   useEffect(() => {

@@ -1,12 +1,13 @@
 import { GanttTaskType, HealthStatus } from '../types/gantt';
 import { ATTENTION_FLAGS, AttentionFlag } from './attention';
-import { ALL_TYPES, DEFAULT_FILTERS, Filters, fullId } from './filters';
+import { ALL_TYPES, DEFAULT_FILTERS, Filters } from './filters';
 import { PERIOD_PRESETS, PeriodPreset } from './period';
 import { ViewMode } from './timeline';
 
 // The view in the page's URL, so that a link shows someone else the same chart: period,
-// time scale and filters (a portfolio travels as its items, never by name). Defaults are left
-// out, so a plain view has a plain URL; unknown values are dropped one by one.
+// time scale and filters (a portfolio travels as its values, never by name). Defaults are left
+// out, so a plain view has a plain URL; unknown values are dropped one by one. A portfolio
+// stores its view the same way (`viewKey`).
 
 export interface ViewState {
   preset?: PeriodPreset;
@@ -42,7 +43,6 @@ export function encodeView({ preset, offset, viewMode, filters }: ViewState): st
   if (filters.health.length) params.set('health', filters.health.join(','));
   if (filters.attention.length) params.set('attention', filters.attention.join(','));
   if (filters.blocked) params.set('blocked', '1');
-  if (filters.items.length) params.set('items', filters.items.join(','));
   return params.toString();
 }
 
@@ -64,7 +64,6 @@ export function decodeView(search: string): ViewState {
     viewMode,
     filters: {
       ...DEFAULT_FILTERS,
-      items: [...new Set(list(params.get('items')))].filter((id) => fullId(id)),
       search: params.get('q') ?? '',
       types,
       labels: [...new Set(params.getAll('label').filter(Boolean))],
@@ -73,4 +72,22 @@ export function decodeView(search: string): ViewState {
       blocked: params.get('blocked') === '1',
     },
   };
+}
+
+/** The whole view as a query string, every field written and the lists sorted: two views that
+ * show the same chart get the same key, whatever the order things were picked in. What a
+ * portfolio stores, and how it is recognized. */
+export function viewKey({ preset, offset, viewMode, filters }: { preset: PeriodPreset; offset: number; viewMode: ViewMode; filters: Filters }): string {
+  const sorted = (values: string[]) => [...values].sort();
+  return encodeView({
+    preset,
+    offset,
+    viewMode,
+    filters: {
+      ...filters,
+      labels: sorted(filters.labels),
+      health: sorted(filters.health) as Filters['health'],
+      attention: sorted(filters.attention) as Filters['attention'],
+    },
+  });
 }

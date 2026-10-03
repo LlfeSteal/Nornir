@@ -9,25 +9,25 @@ import {
   Portfolios,
   renamePortfolio,
   setDefault,
-  updateItems,
+  updateView,
 } from '../utils/portfolios';
 import { CheckIcon, ChevronDownIcon } from './Icons';
 
 interface Props {
   portfolios: Portfolios;
   onPortfoliosChange: (change: (state: Portfolios) => Portfolios) => void;
-  items: string[]; // the items shown (compact IDs), the portfolio's value
-  onItemsChange: (items: string[]) => void;
+  currentKey: string; // viewKey of the view shown: filters, period and time scale
+  onApply: (query: string | undefined) => void; // shows a portfolio's view; undefined clears the filters
   activeId?: string; // the portfolio last applied or saved, to tell when it is edited
   onActiveChange: (id: string | undefined) => void;
 }
 
 type Mode = { kind: 'menu' } | { kind: 'save' } | { kind: 'rename' } | { kind: 'delete' };
 
-/** Pop-up button to pick, save and manage named portfolios of milestones and epics. Its button
- * names the portfolio shown: the one holding exactly these items, or the one applied last,
- * "edited" since. */
-export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange, items, onItemsChange, activeId, onActiveChange }) => {
+/** Pop-up button to pick, save and manage portfolios: named saved views (filters, period and
+ * time scale). Its button names the portfolio shown: the one whose view this is, or the one
+ * applied last, "edited" since. */
+export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange, currentKey, onApply, activeId, onActiveChange }) => {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>({ kind: 'menu' });
   const [name, setName] = useState('');
@@ -37,9 +37,9 @@ export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange,
   const popover = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
 
-  const match = matchingPortfolio(portfolios, items);
+  const match = matchingPortfolio(portfolios, currentKey);
   const active = portfolios.portfolios.find((p) => p.id === activeId);
-  const edited = !match && !!active && items.length > 0;
+  const edited = !match && !!active;
   const current: Portfolio | undefined = match ?? (edited ? active : undefined);
   const text = match ? match.name : edited ? `${active!.name} (edited)` : undefined;
 
@@ -66,7 +66,7 @@ export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange,
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apply = (portfolio: Portfolio | undefined) => {
-    onItemsChange(portfolio?.items ?? []);
+    onApply(portfolio?.query);
     onActiveChange(portfolio?.id);
     close(true);
   };
@@ -89,7 +89,7 @@ export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange,
       onPortfoliosChange((state) => renamePortfolio(state, current.id, name));
     } else {
       const id = newPortfolioId();
-      onPortfoliosChange((state) => addPortfolio(state, { id, name, items }));
+      onPortfoliosChange((state) => addPortfolio(state, { id, name, query: currentKey }));
       onActiveChange(id);
     }
     close(true);
@@ -131,9 +131,10 @@ export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange,
                 Portfolios
               </div>
               <div role="menu" aria-label="Portfolios">
-                <button type="button" role="menuitemradio" aria-checked={items.length === 0} className="menu-item" onClick={() => apply(undefined)}>
+                <button type="button" role="menuitemradio" aria-checked={!match && !edited} className="menu-item" onClick={() => apply(undefined)}>
                   <CheckIcon size={13} className="check" />
-                  <span className="menu-item-label">All items</span>
+                  <span className="menu-item-label">No portfolio</span>
+                  <span className="menu-item-detail">Clears the filters</span>
                 </button>
                 {portfolios.portfolios.map((portfolio) => (
                   <button
@@ -151,10 +152,10 @@ export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange,
                 ))}
               </div>
               {portfolios.portfolios.length === 0 && (
-                <div className="menu-empty">Pick milestones and epics in Items, then save them here.</div>
+                <div className="menu-empty">Set filters, a period and a scale, then save them here.</div>
               )}
               <div className="menu-footer">
-                <button type="button" className="menu-item" disabled={items.length === 0 || !!match} onClick={() => startNaming('save')}>
+                <button type="button" className="menu-item" disabled={!!match} onClick={() => startNaming('save')}>
                   Save as portfolio…
                 </button>
                 {current && (
@@ -164,7 +165,7 @@ export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange,
                         type="button"
                         className="menu-item"
                         onClick={() => {
-                          onPortfoliosChange((state) => updateItems(state, current.id, items));
+                          onPortfoliosChange((state) => updateView(state, current.id, currentKey));
                           close(true);
                         }}
                       >
@@ -227,7 +228,7 @@ export const PortfolioMenu: React.FC<Props> = ({ portfolios, onPortfoliosChange,
           )}
           {mode.kind === 'delete' && current && (
             <div className="menu-form">
-              <div className="menu-confirm">Delete “{current.name}”? Its milestones and epics stay in GitLab.</div>
+              <div className="menu-confirm">Delete “{current.name}”? The view shown stays as it is.</div>
               <div className="menu-actions">
                 <button type="button" className="button" onClick={() => setMode({ kind: 'menu' })}>
                   Cancel

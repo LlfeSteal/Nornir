@@ -247,16 +247,17 @@ export const nestedDependencyTree = [
   },
 ];
 
-// Portfolios and shared links need real GitLab IDs (`gid://gitlab/…`): links carry them as
-// "m1", "w10". Tests run on 2026-10-15. Release 1 holds Payments (its `_ms_` copy); Payments
-// is late, and its Refunds ends past it; Search's Indexer is at risk; Billing has no children.
+// What needs attention, with GitLab-shaped IDs (tests run on 2026-10-15): Release 1 holds
+// Payments (its `_ms_` copy); Payments is late, and its Refunds ends past it; Search's Indexer
+// is at risk; Billing has no children. Only Release 1 and Payments reach into Q3 2026 (not
+// Refunds).
 const W = (n: number) => `gid://gitlab/WorkItem/${n}`;
 const MS = (n: number) => `gid://gitlab/Milestone/${n}`;
 const payments = (suffix: string) => ({
   id: `${W(10)}${suffix}`, name: 'Payments', type: 'epic', start: '2026-09-01', end: '2026-10-31', progress: 0, linearProgress: 60,
   children: [{ id: `${W(11)}${suffix}`, name: 'Refunds', type: 'issue', start: '2026-10-01', end: '2026-11-15', progress: 0, linearProgress: 0 }],
 });
-export const portfolioTree = [
+export const attentionTree = [
   {
     id: MS(1), name: '[Milestone] Release 1', type: 'milestone', start: '2026-09-01', end: '2026-11-30', progress: 50, linearProgress: 50,
     children: [payments(`_ms_${W(10)}`)],
