@@ -547,6 +547,7 @@ button { font: inherit; color: inherit; }
 .popup-button-text { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popup-button[data-active] { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
 .popup-button[data-active] svg { color: inherit; }
+.popup-button-note { flex: none; opacity: 0.75; }
 
 /* Filter popover: same material as the appearance menu, anchored on the left */
 .filter-popover { left: 0; right: auto; width: 290px; transform-origin: top left; }
@@ -570,8 +571,31 @@ button { font: inherit; color: inherit; }
 .copy-link[data-state='copied'] { color: var(--on-track); }
 .copy-link[data-state='failed'] { color: var(--text-secondary); }
 
-/* Portfolio menu: a pop-up with inline forms (save, rename, delete) */
-.portfolio-popover { width: 280px; }
+/* Portfolio menu: rows like macOS menu items (the whole row highlights in blue), with trailing
+   buttons shown on hover or focus — star (default, always shown when set), pencil (rename in
+   place), bin (asks on the row) — and an inline form to save a new one. */
+.portfolio-popover { width: 300px; }
+.portfolio-row { position: relative; display: flex; align-items: center; min-height: 28px; border-radius: 6px; }
+.portfolio-row .menu-item { flex: 1; min-width: 0; background: none; color: inherit; }
+.portfolio-row:not([data-editing]):not([data-confirm]):hover,
+.portfolio-row:not([data-editing]):not([data-confirm]):focus-within { background: var(--blue); color: #fff; }
+.portfolio-row .menu-item:hover, .portfolio-row .menu-item:focus-visible { background: none; color: inherit; }
+.portfolio-row-actions { flex: none; display: inline-flex; gap: 2px; padding-right: 4px; }
+.portfolio-action {
+  display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
+  background: none; color: inherit; cursor: default; opacity: 0; transition: opacity 0.12s var(--ease);
+}
+.portfolio-row:hover .portfolio-action, .portfolio-row:focus-within .portfolio-action { opacity: 1; }
+.portfolio-action:hover, .portfolio-action:focus-visible { background: rgba(255, 255, 255, 0.18); outline: none; }
+.portfolio-action[aria-pressed='true'] { opacity: 1; color: var(--orange); }
+.portfolio-row:hover .portfolio-action[aria-pressed='true'], .portfolio-row:focus-within .portfolio-action[aria-pressed='true'] { color: inherit; }
+.portfolio-row[data-editing] { flex-wrap: wrap; padding: 2px 0; }
+.portfolio-row[data-editing] .check { visibility: hidden; margin: 0 8px; flex: none; }
+.portfolio-rename { flex: 1; min-width: 0; margin: 0 4px 0 0; height: 24px; background: var(--card); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 45%, transparent); }
+.portfolio-problem { flex-basis: 100%; padding: 4px 8px 2px 29px; }
+.portfolio-row[data-confirm] { gap: 6px; padding: 2px 4px 2px 8px; }
+.portfolio-row[data-confirm] .button { height: 22px; padding: 0 8px; font-size: 12px; }
+.portfolio-confirm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .menu-item:disabled { color: var(--text-tertiary); background: none; cursor: default; }
 .menu-form { display: flex; flex-direction: column; gap: 8px; padding: 2px 0; }
 .menu-form .menu-header { padding-bottom: 0; }

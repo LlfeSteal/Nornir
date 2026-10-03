@@ -180,3 +180,30 @@ export const LinkIcon = (props: IconProps) => (
     <path d="M14 10.5a4.5 4.5 0 0 0-6.4-.4l-2.8 2.8a4.5 4.5 0 0 0 6.4 6.4l1.4-1.4" />
   </Icon>
 );
+
+/** Like SF Symbols' star / star.fill: the default portfolio. */
+export const StarIcon = ({ filled, ...props }: IconProps & { filled?: boolean }) => (
+  <Icon {...props}>
+    <path
+      d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"
+      fill={filled ? 'currentColor' : 'none'}
+    />
+  </Icon>
+);
+
+/** Like SF Symbols' pencil: renames in place. */
+export const PencilIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M15.5 5.5l3 3L8 19l-4 1 1-4z" />
+    <path d="M13.5 7.5l3 3" />
+  </Icon>
+);
+
+/** Like SF Symbols' trash: deletes. */
+export const TrashIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4.5 6.5h15M9.5 6.5V4.5h5v2" />
+    <path d="M6.5 6.5l1 13h9l1-13" />
+    <path d="M10.5 10v6.5M13.5 10v6.5" />
+  </Icon>
+);
