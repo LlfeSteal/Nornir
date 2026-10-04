@@ -1,0 +1,137 @@
+# Default values for the Nornir chart.
+
+gitlab:
+  # GitLab instance.
+  url: https://gitlab.com
+  # Required. Full path of the displayed group (e.g. my-org/my-group).
+  group: ""
+  # GitLab token with the read_api scope, stored in a Secret created by the chart.
+  # Prefer existingSecret so the token never lands in a values file.
+  token: ""
+  # Name of an existing Secret holding the token (takes precedence over token).
+  existingSecret: ""
+  # Key of the token in that Secret.
+  existingSecretKey: GITLAB_TOKEN
+
+# Private certificate authority, for a GitLab instance whose certificate is signed by an
+# internal CA. The certificates are added to the system ones (public CAs still work).
+# Set exactly one source when enabled.
+privateCA:
+  enabled: false
+  # PEM certificates (one or more, concatenated): the chart stores them in a ConfigMap.
+  certificates: ""
+  #  certificates: |
+  #    -----BEGIN CERTIFICATE-----
+  #    ...
+  #    -----END CERTIFICATE-----
+  # Or an existing ConfigMap holding the bundle (e.g. distributed by trust-manager)...
+  existingConfigMap: ""
+  # ...or an existing Secret (e.g. the ca.crt of a cert-manager certificate).
+  existingSecret: ""
+  # Key of the bundle in that ConfigMap or Secret.
+  key: ca.crt
+
+backend:
+  # The cache lives in the pod's memory: each replica fetches GitLab on its own.
+  # One replica is recommended.
+  replicaCount: 1
+  image:
+    repository: nornir-backend
+    # Defaults to the chart's appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  # Extra environment variables (list of EnvVar).
+  extraEnv: []
+  resources: {}
+  #  requests:
+  #    cpu: 50m
+  #    memory: 128Mi
+  #  limits:
+  #    memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: http
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+frontend:
+  replicaCount: 1
+  image:
+    repository: nornir-frontend
+    # Defaults to the chart's appVersion.
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  # Extra environment variables (list of EnvVar).
+  extraEnv: []
+  resources: {}
+  #  requests:
+  #    cpu: 10m
+  #    memory: 32Mi
+  #  limits:
+  #    memory: 128Mi
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+  podAnnotations: {}
+  podLabels: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Create a service account for the pods (they don't call the Kubernetes API).
+  create: true
+  # Name of the service account; generated from the fullname when empty.
+  name: ""
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # The first fetch of a large group can take minutes: raise the proxy timeout.
+  #  nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    - host: nornir.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: nornir-tls
+  #    hosts:
+  #      - nornir.example.com

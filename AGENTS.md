@@ -8,7 +8,7 @@ Reference for any agent (or human) working in this repository. Read it fully bef
 
 - **Backend**: Go 1.21+ / Gin. Queries the GitLab GraphQL API, builds a tree, keeps it encoded in an in-memory cache (`internal/cache`, see Backend API).
 - **Frontend**: React 18 + TypeScript + Vite, our own virtualized Gantt chart in plain HTML/CSS (no chart library), HTTP via axios.
-- **Deployment**: `docker compose` — Go backend (alpine image) + nginx serving the SPA and proxying `/api/` to the backend.
+- **Deployment**: `docker compose` or the Helm chart `charts/nornir` (Kubernetes) — Go backend (alpine image) + nginx (unprivileged image) serving the SPA and proxying `/api/` to the backend.
 
 ## Layout
 
@@ -44,7 +44,8 @@ frontend/
   e2e/                              Playwright tests (config in frontend/playwright.config.ts)
   src/**/*.test.ts                  Vitest unit tests (config in frontend/vitest.config.ts)
   e2e/largeTree.ts                  production-sized dataset (~16,000 rows) for large.mocked.spec.ts
-  nginx.conf, Dockerfile
+  nginx.conf.template, Dockerfile   nginx config, NORNIR_BACKEND_URL substituted at container start
+charts/nornir/                      Helm chart (README.md: values, ingress, private CA)
 docker-compose.yml                  compose project "nornir" (nornir-backend, nornir-frontend)
 .env / .env.example                 configuration (.env is never committed)
 .devcontainer/                      Go 1.22 image + node + docker-in-docker
@@ -73,6 +74,10 @@ npx playwright install --with-deps chromium # once per container, if Chromium is
 # Full stack
 docker compose up -d --build                # http://localhost
 docker compose down
+
+# Helm chart (helm, kubeconform and kind aren't in the devcontainer: download them to a temp dir)
+helm lint charts/nornir --set gitlab.group=a/b
+helm template t charts/nornir --set gitlab.group=a/b | kubeconform -strict -summary
 ```
 
 ## Configuration (`.env`)
@@ -193,6 +198,15 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
   - Default target: the docker stack (`http://localhost`), override with `BASE_URL`.
   - **The docker stack serves the last *built image*, not your working tree.** To run the mocked tests against current code without rebuilding the image: `npm run build && npx vite preview --port 4173` then `BASE_URL=http://localhost:4173 npm run test:e2e:mocked` (the API is mocked, no backend needed). The `@live` test needs the stack rebuilt: `docker compose up -d --build`.
 
+## Deployment (Docker images, Helm chart)
+
+- **Frontend image**: `nginxinc/nginx-unprivileged:alpine`, uid 101, **listens on 8080** (compose maps `80:8080`). The config is `frontend/nginx.conf.template`, copied to `/etc/nginx/templates/`: the image's entrypoint runs `envsubst` on it at startup, substituting **only defined variables** (`NORNIR_BACKEND_URL`, default `http://backend:8080` in the Dockerfile; the chart sets its backend Service), so nginx's own `$host`, `$uri`… stay. Don't add an environment variable named like an nginx variable.
+- **Backend image**: `USER 10001:10001` is **numeric** on purpose: with a user name, Kubernetes can't check `runAsNonRoot` and refuses to start the pod.
+- **Chart** (`charts/nornir`): backend + frontend Deployments and Services, optional Ingress (frontend only), token Secret (or `gitlab.existingSecret`), `values.schema.json` (unknown keys rejected: add new values to it), `helm test` pod (`/api/health` through the frontend). `gitlab.group` is `required` in the backend template. Pods are non-root, read-only root filesystem, no capabilities; the frontend gets `emptyDir`s on `/tmp` and `/etc/nginx/conf.d` (nginx writes its pid and the generated config there). Inline token and CA changes restart the backend through `checksum/*` annotations.
+- **Private CA** (`privateCA`, exactly one source: inline `certificates` → ConfigMap `<fullname>-ca`, `existingConfigMap`, `existingSecret`; `key` names the entry): mounted on `/etc/nornir/ca` with `SSL_CERT_DIR=/etc/ssl/certs:/etc/nornir/ca`. Go on Linux still loads the system bundle file (`SSL_CERT_FILE` unset) and adds every certificate of those directories: public CAs keep working. **Never set `SSL_CERT_FILE`** for this: it would replace the system bundle. No TLS-skip option. Compose: same variable and mount in a `docker-compose.override.yml` (gitignored).
+- **Cache per replica**: the cache is in memory, so each backend replica fetches GitLab on its own; the chart defaults to 1.
+- Tested on a kind cluster (docker-in-docker): `kind create cluster`, `kind load docker-image`, `helm install`, `helm test`, then `kubectl port-forward` and `BASE_URL=http://localhost:<port> npx playwright test --grep @live`. The CA was checked against an HTTPS fake GitLab signed by a generated CA (502 `x509: certificate signed by unknown authority` without it, 404 "group not found" with each source).
+
 ## Development environment
 
 - Devcontainer: `mcr.microsoft.com/devcontainers/go:1-1.22-bookworm` image, features node, docker-in-docker (compose v2) and claude-code. Ports: 5173 (Vite), 8080 (API), 80 (compose nginx).
@@ -209,7 +223,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 
 - **[Conventional Commits](https://www.conventionalcommits.org/)** format, **title only** (no body).
 - The title must be **easy to understand** for someone who doesn't know the project: it says *what the commit changes*, imperative mood, no internal jargon.
-- `type(scope): description` — types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`. Scopes: `backend`, `frontend`, `e2e`, `docker`, `devcontainer`, `docs`.
+- `type(scope): description` — types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`. Scopes: `backend`, `frontend`, `e2e`, `docker`, `helm`, `devcontainer`, `docs`.
 - Examples:
   - `feat(frontend): open the Gantt chart on today's date`
   - `fix(backend): read milestone links from webPath`
@@ -222,6 +236,7 @@ Covered by `tree_builder_test.go` — any behavior change must come with a test.
 1. `cd backend && go vet ./... && go test ./...`
 2. `cd frontend && npm run build && npm run test:unit && npm run test:e2e:mocked` (against a fresh build — see Tests)
 3. If the GitLab client or GraphQL queries changed: `npm run test:e2e` (includes `@live`) with the stack running.
+4. If the chart or the Dockerfiles changed: `helm lint` and `helm template … | kubeconform -strict` (see Commands), and ideally an install on kind.
 
 ### Documentation
 

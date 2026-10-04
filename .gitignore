@@ -6,3 +6,4 @@ dist/
 backend/server
 test-results/
 playwright-report/
+docker-compose.override.yml

@@ -12,6 +12,7 @@ RUN apk --no-cache add ca-certificates \
     && adduser -D -H -u 10001 app
 WORKDIR /app
 COPY --from=builder /app/server .
-USER app
+# Numeric, so Kubernetes can check runAsNonRoot
+USER 10001:10001
 EXPOSE 8080
 CMD ["./server"]

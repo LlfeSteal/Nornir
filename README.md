@@ -7,7 +7,7 @@ Gantt chart of a GitLab group: the epics, milestones and issues of the group and
 
 ## Prerequisites
 
-- Docker with Compose v2 (included in the project's devcontainer).
+- Docker with Compose v2 (included in the project's devcontainer), or a Kubernetes cluster with Helm 3.
 - A GitLab token with the `read_api` scope.
 - To develop outside Docker: Go 1.21+ and Node 20+.
 
@@ -31,6 +31,19 @@ docker compose up -d --build
 ```
 
 Then open http://localhost. After editing `.env`: `docker compose up -d --force-recreate backend && docker compose up -d`.
+
+**On Kubernetes**: with the Helm chart in [`charts/nornir`](charts/nornir/README.md) (build and push the two images, then `helm install nornir charts/nornir --set gitlab.group=my-org/my-group --set gitlab.existingSecret=<secret>`; optional Ingress).
+
+**Private certificate authority**: for a self-hosted GitLab signed by an internal CA, the backend needs that CA (otherwise it reports `x509: certificate signed by unknown authority`). With Helm, set `privateCA` (see the [chart's README](charts/nornir/README.md#private-certificate-authority)). With Docker Compose, add a `docker-compose.override.yml` next to `docker-compose.yml`:
+
+```yaml
+services:
+  backend:
+    environment:
+      SSL_CERT_DIR: /etc/ssl/certs:/etc/nornir/ca   # system CAs + yours
+    volumes:
+      - ./corp-ca.pem:/etc/nornir/ca/corp-ca.pem:ro
+```
 
 **In development** (two terminals):
 

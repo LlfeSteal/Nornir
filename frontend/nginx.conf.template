@@ -1,5 +1,6 @@
 server {
-    listen 80;
+    # nginx-unprivileged runs as a non-root user: it can't bind port 80.
+    listen 8080;
     server_name localhost;
 
     # The chart of a large group is several MB of JSON: compressed, about ten times less.
@@ -15,9 +16,10 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Transparent proxy to the Go backend
+    # Transparent proxy to the Go backend. NORNIR_BACKEND_URL is substituted when the
+    # container starts (envsubst on /etc/nginx/templates); nginx variables are left alone.
     location /api/ {
-        proxy_pass http://backend:8080/api/;
+        proxy_pass ${NORNIR_BACKEND_URL}/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

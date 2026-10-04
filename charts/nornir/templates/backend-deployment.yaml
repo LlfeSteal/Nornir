@@ -1,0 +1,117 @@
+{{- $tokenSecret := include "nornir.tokenSecretName" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nornir.componentName" (list . "backend") }}
+  labels:
+    {{- include "nornir.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nornir.selectorLabels" (list . "backend") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- /* Restart the pods when the token or the CA set by the chart change. */}}
+        {{- if and .Values.gitlab.token (not .Values.gitlab.existingSecret) }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if and .Values.privateCA.enabled .Values.privateCA.certificates }}
+        checksum/ca: {{ include (print $.Template.BasePath "/ca-configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.backend.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "nornir.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+        {{- with .Values.backend.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "nornir.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: backend
+          image: {{ include "nornir.image" (list . .Values.backend.image) | quote }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: PORT
+              value: "8080"
+            - name: GITLAB_URL
+              value: {{ .Values.gitlab.url | quote }}
+            - name: GITLAB_GROUP
+              value: {{ required "gitlab.group is required: the full path of the GitLab group to show (e.g. my-org/my-group)" .Values.gitlab.group | quote }}
+            {{- if $tokenSecret }}
+            - name: GITLAB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $tokenSecret }}
+                  key: {{ include "nornir.tokenSecretKey" . }}
+            {{- end }}
+            {{- if .Values.privateCA.enabled }}
+            # Go reads the system bundle plus every certificate of these directories.
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs:/etc/nornir/ca
+            {{- end }}
+            {{- with .Values.backend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          {{- with .Values.backend.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.privateCA.enabled }}
+          volumeMounts:
+            - name: private-ca
+              mountPath: /etc/nornir/ca
+              readOnly: true
+          {{- end }}
+      {{- if .Values.privateCA.enabled }}
+      volumes:
+        - name: private-ca
+          {{- if .Values.privateCA.existingSecret }}
+          secret:
+            secretName: {{ .Values.privateCA.existingSecret }}
+          {{- else }}
+          configMap:
+            name: {{ .Values.privateCA.existingConfigMap | default (printf "%s-ca" (include "nornir.fullname" .)) }}
+          {{- end }}
+            items:
+              - key: {{ include "nornir.caKey" . }}
+                path: ca.crt
+      {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,21 @@
+Nornir shows the Gantt chart of the GitLab group {{ .Values.gitlab.group }} ({{ .Values.gitlab.url }}).
+{{- if not (include "nornir.tokenSecretName" .) }}
+
+WARNING: no GitLab token is configured (gitlab.token or gitlab.existingSecret).
+The backend answers 401 to every request that doesn't carry an Authorization header.
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+
+Open:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ (first .paths).path }}
+{{- end }}
+{{- else }}
+
+No ingress is enabled. To open the application from your machine:
+  kubectl --namespace {{ .Release.Namespace }} port-forward service/{{ include "nornir.componentName" (list . "frontend") }} 8080:{{ .Values.frontend.service.port }}
+then open http://localhost:8080
+{{- end }}
+
+Check the deployment with: helm test {{ .Release.Name }} --namespace {{ .Release.Namespace }}

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: nornir
+description: Gantt chart of a GitLab group's epics, milestones and issues
+type: application
+version: 0.1.0
+appVersion: "0.2.0"
+home: https://github.com/LlfeSteal/Nornir
+sources:
+  - https://github.com/LlfeSteal/Nornir
+keywords:
+  - gitlab
+  - gantt

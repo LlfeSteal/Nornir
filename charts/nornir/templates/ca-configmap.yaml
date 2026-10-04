@@ -1,0 +1,12 @@
+{{- include "nornir.validatePrivateCA" . }}
+{{- if and .Values.privateCA.enabled .Values.privateCA.certificates }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nornir.fullname" . }}-ca
+  labels:
+    {{- include "nornir.labels" . | nindent 4 }}
+data:
+  ca.crt: |
+    {{- .Values.privateCA.certificates | trim | nindent 4 }}
+{{- end }}
