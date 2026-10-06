@@ -17,6 +17,7 @@ interface Props {
   filters: Filters;
   onChange: (filters: Filters) => void;
   labels: FilterOption[];
+  subgroups: FilterOption[]; // none when the group has no subgroups
   portfolios: Portfolios;
   onPortfoliosChange: (change: (state: Portfolios) => Portfolios) => void;
   viewKey: string; // the view shown, as a portfolio stores it
@@ -27,12 +28,13 @@ interface Props {
 }
 
 /** Picks the items to show: a portfolio (a named saved view), search field, item types (all
- * pressed by default, none = nothing), labels, health status and blocked items; then copies a
+ * pressed by default, none = nothing), labels, GitLab subgroups, health status and blocked items; then copies a
  * link to the view. */
 export const FilterBar: React.FC<Props> = ({
   filters,
   onChange,
   labels,
+  subgroups,
   portfolios,
   onPortfoliosChange,
   viewKey,
@@ -101,6 +103,16 @@ export const FilterBar: React.FC<Props> = ({
         onChange={(values) => onChange({ ...filters, labels: values })}
         emptyText="No labels in this group"
       />
+      {(subgroups.length > 0 || filters.subgroups.length > 0) && (
+        <FilterMenu
+          label="Subgroups"
+          plural="subgroups"
+          options={subgroups}
+          selected={filters.subgroups}
+          onChange={(values) => onChange({ ...filters, subgroups: values })}
+          emptyText="No subgroups in this group"
+        />
+      )}
       <FilterMenu
         label="Health"
         plural="statuses"

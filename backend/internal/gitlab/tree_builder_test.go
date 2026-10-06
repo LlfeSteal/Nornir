@@ -540,6 +540,38 @@ func TestLabelsAreSetOnEveryPlacement(t *testing.T) {
 	}
 }
 
+func TestSubgroupIsSetOnEveryPlacement(t *testing.T) {
+	epic := node("epic", "Epic", "OPEN", milestoneTitled("m1", "Sprint 1"))
+	epic.Subgroup = "backend"
+	sub := node("sub", "Epic", "OPEN", parent("epic"))
+	sub.Subgroup = "backend/core"
+	tree := mustBuild(t, []WorkItemNode{epic, sub, node("bare", "Issue", "OPEN")}, []Milestone{{ID: "m1", Title: "Sprint 1"}})
+
+	got := map[string]string{}
+	var walk func([]model.GanttTask)
+	walk = func(tasks []model.GanttTask) {
+		for _, task := range tasks {
+			got[task.ID] = task.Subgroup
+			walk(task.Children)
+		}
+	}
+	walk(tree)
+	want := map[string]string{
+		"m1":             "",
+		"epic":           "backend",
+		"epic_root_epic": "backend",
+		"sub":            "backend/core",
+		"sub_root_epic":  "backend/core",
+		"sub_root_sub":   "backend/core",
+		"bare":           "",
+	}
+	for id, w := range want {
+		if g, ok := got[id]; !ok || g != w {
+			t.Errorf("%s subgroup = %q (found %v), want %q; tree %v", id, g, ok, w, got)
+		}
+	}
+}
+
 func health(status string) WorkItemWidget {
 	return WorkItemWidget{Typename: typenameHealth, Type: "HEALTH_STATUS", HealthStatus: &status}
 }

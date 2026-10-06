@@ -47,10 +47,12 @@ export async function mockApi(
   page: Page,
   gantt: { status?: number; body: unknown; delayMs?: number } = { body: tree },
   labels: { status?: number; body: unknown } = { body: groupLabels },
+  subgroups: { status?: number; body: unknown } = { body: [] },
 ) {
   const ganttCalls: string[] = [];
   await page.route('**/api/config', (route) => route.fulfill({ json: config }));
   await page.route('**/api/labels*', (route) => route.fulfill({ status: labels.status ?? 200, json: labels.body }));
+  await page.route('**/api/subgroups*', (route) => route.fulfill({ status: subgroups.status ?? 200, json: subgroups.body }));
   await page.route('**/api/gantt*', async (route) => {
     ganttCalls.push(route.request().url());
     if (gantt.delayMs) await new Promise((resolve) => setTimeout(resolve, gantt.delayMs));
@@ -273,4 +275,30 @@ export const attentionTree = [
     children: [{ id: W(21), name: 'Indexer', type: 'issue', health: 'atRisk', start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 0 }],
   },
   { id: W(40), name: 'Billing', type: 'epic', noChildren: true, start: '2026-10-01', end: '2026-12-31', progress: 0, linearProgress: 20 },
+];
+
+// Items spread over the subgroups of demo/group: the epic is the group's own, its issues live
+// in projects of team, team/core (nested) and ops; the milestone holds a copy of the
+// team/core issue. /api/subgroups also lists "Design", which holds no item.
+const ganttRow = (id: string, name: string, type: string, extra: Record<string, unknown> = {}) => ({
+  id, name, type, start: '2026-10-01', end: '2026-10-20', progress: 0, linearProgress: 50, ...extra,
+});
+export const subgroupTree = [
+  ganttRow('M1', '[Milestone] Sprint 1', 'milestone', { children: [ganttRow('I2_ms_I2', 'Core issue', 'issue', { subgroup: 'team/core' })] }),
+  ganttRow('E1', 'Group epic', 'epic', {
+    children: [
+      ganttRow('I1', 'Team issue', 'issue', { subgroup: 'team' }),
+      ganttRow('I2', 'Core issue', 'issue', { subgroup: 'team/core' }),
+      ganttRow('I3', 'Ops issue', 'issue', { subgroup: 'ops' }),
+      ganttRow('I4', 'Group issue', 'issue'),
+    ],
+  }),
+];
+
+/** /api/subgroups of demo/group (sorted by path). */
+export const groupSubgroups = [
+  { path: 'design', name: 'Design' },
+  { path: 'ops', name: 'Operations' },
+  { path: 'team', name: 'Team' },
+  { path: 'team/core', name: 'Core' },
 ];

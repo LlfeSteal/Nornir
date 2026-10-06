@@ -32,7 +32,9 @@ export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, 
 
   const shown = useMemo(() => {
     const text = normalizeText(query.trim());
-    return text ? options.filter((o) => normalizeText(o.label).includes(text)) : options;
+    return text
+      ? options.filter((o) => normalizeText(o.label).includes(text) || (!!o.context && normalizeText(o.context).includes(text)))
+      : options;
   }, [options, query]);
 
   const optionButtons = () => Array.from(list.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? []);
@@ -130,12 +132,14 @@ export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, 
                     aria-selected={checked}
                     aria-label={option.label}
                     className="menu-item"
+                    style={option.depth && !query.trim() ? ({ '--depth': option.depth } as React.CSSProperties) : undefined}
                     onClick={() => toggle(option.value)}
                   >
                     <CheckIcon size={13} className="check" />
                     {option.color && <span className="label-dot" style={{ background: option.color }} />}
                     <span className="menu-item-label">{option.label}</span>
                     {option.detail && <span className="menu-item-detail">{option.detail}</span>}
+                    {option.context && query.trim() && <span className="menu-item-detail menu-item-context">{option.context}</span>}
                   </button>
                 </React.Fragment>
               );

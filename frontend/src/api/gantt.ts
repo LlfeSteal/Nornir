@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { GanttTask, Label } from '../types/gantt';
+import { GanttTask, Label, Subgroup } from '../types/gantt';
 
 export interface AppConfig {
   group: string;
@@ -27,6 +27,14 @@ export async function fetchLabels(refresh = false): Promise<Label[]> {
     params: refresh ? { refresh: 1 } : undefined,
   });
   return data;
+}
+
+/** Subgroups of the group at every level, sorted by path. */
+export async function fetchSubgroups(refresh = false): Promise<Subgroup[]> {
+  const { data } = await axios.get<Subgroup[]>('/api/subgroups', {
+    params: refresh ? { refresh: 1 } : undefined,
+  });
+  return Array.isArray(data) ? data : [];
 }
 
 export function errorMessage(err: unknown): string {

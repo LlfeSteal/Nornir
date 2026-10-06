@@ -29,6 +29,9 @@ type GanttTask struct {
 	// included). Its progress comes from its children, so it can't be tracked.
 	NoChildren bool    `json:"noChildren,omitempty"`
 	Labels     []Label `json:"labels,omitempty"`
+	// Subgroup: path of the item's GitLab subgroup relative to the displayed group
+	// ("team/backend"), empty when the item is in the group itself. Never on milestones.
+	Subgroup string `json:"subgroup,omitempty"`
 	// Health is the item's own GitLab health status (HealthOnTrack, HealthNeedsAttention,
 	// HealthAtRisk), empty when unset. HealthBelow counts its open descendants that need
 	// attention or are at risk, each once; nil when there are none.
@@ -97,4 +100,10 @@ func (c HealthCounts) OrNil() *HealthCounts {
 type Label struct {
 	Title string `json:"title"`
 	Color string `json:"color"`
+}
+
+// Subgroup is a subgroup of the displayed group (any level), Path relative to it.
+type Subgroup struct {
+	Path string `json:"path"`
+	Name string `json:"name"`
 }

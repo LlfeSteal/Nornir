@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attentionIndex } from './attention';
-import { applyFilters, canonicalId, DEFAULT_FILTERS, Filters, isFiltering, normalizeText } from './filters';
+import { applyFilters, canonicalId, DEFAULT_FILTERS, Filters, isFiltering, MAIN_GROUP, normalizeText, subgroupOptions } from './filters';
 import { task } from './testing';
 
 // Shaped like the backend output: a milestone holding the `_ms_` copy of an issue, an epic
@@ -90,5 +90,71 @@ describe('applyFilters: attention', () => {
     expect(isFiltering({ ...DEFAULT_FILTERS, attention: ['late'] })).toBe(true);
     expect(applyFilters(tree, { ...DEFAULT_FILTERS, attention: ['late'] }, index).map((node) => node.id)).toEqual(['E5']);
     expect(applyFilters(tree, { ...DEFAULT_FILTERS, attention: ['noDates'] }, index)).toEqual([]);
+  });
+});
+
+describe('subgroups', () => {
+  // Epic E1 in the group itself; its issues in team, team/core and team-b; the milestone holds
+  // a copy of the team/core issue.
+  const subTree = [
+    task('M1', { type: 'milestone', children: [task('I2_ms_I2', { subgroup: 'team/core' })] }),
+    task('M2', { type: 'milestone', children: [task('I4_ms_I4')] }),
+    task('E1', {
+      type: 'epic',
+      children: [
+        task('I1', { subgroup: 'team' }),
+        task('I2', { subgroup: 'team/core' }),
+        task('I3', { subgroup: 'team-b', labels: [{ title: 'bug', color: '#f00' }] }),
+        task('I4'),
+      ],
+    }),
+  ];
+  const ids = (fields: Partial<Filters>) => applyFilters(subTree, { ...DEFAULT_FILTERS, ...fields }).map((node) => node.id);
+
+  it('includes the nested subgroups of a subgroup, not its namesakes', () => {
+    expect(isFiltering({ ...DEFAULT_FILTERS, subgroups: ['team'] })).toBe(true);
+    expect(ids({ subgroups: ['team'] })).toEqual(['M1', 'I2_ms_I2_top', 'I1_top']);
+    expect(ids({ subgroups: ['team/core'], types: ['issue'] })).toEqual(['I2_ms_I2_top']);
+  });
+
+  it('lists the items outside every subgroup for the main group', () => {
+    expect(ids({ subgroups: [MAIN_GROUP] })).toEqual(['M2', 'E1', 'I4_ms_I4_top']);
+  });
+
+  it('matches any of the subgroups, ANDed with the other filters', () => {
+    expect(ids({ subgroups: ['team-b', 'team/core'], types: ['issue'] })).toEqual(['I2_ms_I2_top', 'I3_top']);
+    expect(ids({ subgroups: ['team-b', 'team/core'], labels: ['bug'] })).toEqual(['I3_top']);
+  });
+});
+
+describe('subgroupOptions', () => {
+  const items = [task('E1', { type: 'epic', children: [task('I1', { subgroup: 'team/core/api' }), task('I2', { subgroup: 'ops' })] })];
+
+  it('starts with the group itself, then the subgroups in tree order, indented', () => {
+    const options = subgroupOptions('org/product', [
+      { path: 'team', name: 'Team' },
+      { path: 'team-b', name: 'Team B' },
+      { path: 'team/core', name: 'Core' },
+    ], []);
+    expect(options.map((o) => [o.value, o.label, o.depth, o.context])).toEqual([
+      [MAIN_GROUP, 'product (outside subgroups)', undefined, undefined],
+      ['team', 'Team', 1, undefined],
+      ['team/core', 'Core', 2, 'team'],
+      ['team-b', 'Team B', 1, undefined],
+    ]);
+  });
+
+  it('falls back on the subgroups of the items and their parents', () => {
+    expect(subgroupOptions('org/product', [{ path: 'team', name: 'Team' }], items).map((o) => [o.value, o.label])).toEqual([
+      [MAIN_GROUP, 'product (outside subgroups)'],
+      ['ops', 'ops'],
+      ['team', 'Team'],
+      ['team/core', 'core'],
+      ['team/core/api', 'api'],
+    ]);
+  });
+
+  it('has no options without subgroups', () => {
+    expect(subgroupOptions('org/product', [], [task('I1')])).toEqual([]);
   });
 });

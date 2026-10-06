@@ -40,6 +40,7 @@ export function encodeView({ preset, offset, viewMode, filters }: ViewState): st
     params.set('types', TYPE_CODES.filter(([type]) => filters.types.includes(type)).map(([, code]) => code).join(','));
   }
   filters.labels.forEach((label) => params.append('label', label));
+  filters.subgroups.forEach((subgroup) => params.append('subgroup', subgroup));
   if (filters.health.length) params.set('health', filters.health.join(','));
   if (filters.attention.length) params.set('attention', filters.attention.join(','));
   if (filters.blocked) params.set('blocked', '1');
@@ -67,6 +68,7 @@ export function decodeView(search: string): ViewState {
       search: params.get('q') ?? '',
       types,
       labels: [...new Set(params.getAll('label').filter(Boolean))],
+      subgroups: [...new Set(params.getAll('subgroup').filter(Boolean))],
       health: only(list(params.get('health')), HEALTH),
       attention: only(list(params.get('attention')), ATTENTION_FLAGS) as AttentionFlag[],
       blocked: params.get('blocked') === '1',
@@ -86,6 +88,7 @@ export function viewKey({ preset, offset, viewMode, filters }: { preset: PeriodP
     filters: {
       ...filters,
       labels: sorted(filters.labels),
+      subgroups: sorted(filters.subgroups),
       health: sorted(filters.health) as Filters['health'],
       attention: sorted(filters.attention) as Filters['attention'],
     },

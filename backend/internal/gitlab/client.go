@@ -28,6 +28,7 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
       pageInfo { hasNextPage endCursor }
       nodes {
         id iid title state webUrl
+        namespace { id fullPath }
         workItemType { name }
         widgets {
           __typename
@@ -78,6 +79,18 @@ const labelsQuery = `query GetGroupLabels($fullPath: ID!, $afterCursor: String) 
   }
 }`
 
+// Subgroups of the group, at every level (descendantGroups includes nested ones).
+const subgroupsQuery = `query GetSubgroups($fullPath: ID!, $afterCursor: String) {
+  group(fullPath: $fullPath) {
+    id
+    name
+    descendantGroups(first: 100, after: $afterCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { fullPath name }
+    }
+  }
+}`
+
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // FetchAllWorkItems walks every page of work items of the group (and its projects).
@@ -89,6 +102,7 @@ func FetchAllWorkItems(ctx context.Context, baseURL, token, fullPath string) ([]
 		return g.WorkItems.PageInfo
 	})
 	for i := range all {
+		all[i].Subgroup = subgroupOf(all[i].Namespace, fullPath)
 		for j := range all[i].Widgets {
 			if ms := all[i].Widgets[j].Milestone; ms != nil {
 				ms.WebURL = absoluteURL(baseURL, ms.WebPath)
@@ -124,6 +138,53 @@ func FetchGroupLabels(ctx context.Context, baseURL, token, fullPath string) ([]L
 		return strings.ToLower(all[i].Title) < strings.ToLower(all[j].Title)
 	})
 	return all, err
+}
+
+// FetchSubgroups returns the subgroups of the group at every level, their paths relative
+// to the group, sorted by path (a subgroup right before its own subgroups).
+func FetchSubgroups(ctx context.Context, baseURL, token, fullPath string) ([]Subgroup, error) {
+	var all []Subgroup
+	err := paginate(ctx, baseURL, token, subgroupsQuery, fullPath, func(g *GroupData) PageInfo {
+		for _, group := range g.DescendantGroups.Nodes {
+			if path := relativePath(group.FullPath, fullPath); path != "" {
+				all = append(all, Subgroup{Path: path, Name: group.Name})
+			}
+		}
+		return g.DescendantGroups.PageInfo
+	})
+	sort.SliceStable(all, func(i, j int) bool {
+		return strings.ToLower(all[i].Path) < strings.ToLower(all[j].Path)
+	})
+	return all, err
+}
+
+// subgroupOf returns the path, relative to the group, of the subgroup holding a work item:
+// its namespace when it is a group (epics), the project's group otherwise. "" when the item
+// is in the group itself (or in one of its own projects), or its namespace is unknown.
+func subgroupOf(namespace *NamespaceRef, groupPath string) string {
+	if namespace == nil {
+		return ""
+	}
+	path := namespace.FullPath
+	// Group namespaces are "gid://gitlab/Group/<n>"; projects "…/Namespaces::ProjectNamespace/<n>".
+	if !strings.HasPrefix(namespace.ID, "gid://gitlab/Group/") {
+		cut := strings.LastIndex(path, "/")
+		if cut < 0 {
+			return ""
+		}
+		path = path[:cut]
+	}
+	return relativePath(path, groupPath)
+}
+
+// relativePath returns path relative to groupPath ("" for the group itself or a path
+// outside it).
+func relativePath(path, groupPath string) string {
+	rest, ok := strings.CutPrefix(strings.ToLower(path), strings.ToLower(groupPath)+"/")
+	if !ok {
+		return ""
+	}
+	return path[len(path)-len(rest):]
 }
 
 // paginate runs query page by page; collect accumulates the nodes and returns the pageInfo.

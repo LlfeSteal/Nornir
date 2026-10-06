@@ -15,6 +15,24 @@ type GroupData struct {
 	WorkItems  WorkItemConn  `json:"workItems"`
 	Milestones MilestoneConn `json:"milestones"`
 	Labels     LabelConn     `json:"labels"`
+	// DescendantGroups: the subgroups at every level.
+	DescendantGroups GroupConn `json:"descendantGroups"`
+}
+
+type GroupConn struct {
+	PageInfo PageInfo   `json:"pageInfo"`
+	Nodes    []GroupRef `json:"nodes"`
+}
+
+type GroupRef struct {
+	FullPath string `json:"fullPath"`
+	Name     string `json:"name"`
+}
+
+// Subgroup is a subgroup of the displayed group, Path relative to it ("team/backend").
+type Subgroup struct {
+	Path string
+	Name string
 }
 
 type LabelConn struct {
@@ -49,8 +67,18 @@ type WorkItemNode struct {
 	Title        string           `json:"title"`
 	State        string           `json:"state"`
 	WebURL       string           `json:"webUrl"`
+	Namespace    *NamespaceRef    `json:"namespace"`
 	WorkItemType WorkItemType     `json:"workItemType"`
 	Widgets      []WorkItemWidget `json:"widgets"`
+	// Subgroup: path of the item's subgroup relative to the group, "" in the group itself
+	// (computed by the client, see subgroupOf).
+	Subgroup string `json:"-"`
+}
+
+// NamespaceRef is where a work item lives: a group (epics) or a project's namespace.
+type NamespaceRef struct {
+	ID       string `json:"id"` // "gid://gitlab/Group/…" or "gid://gitlab/Namespaces::ProjectNamespace/…"
+	FullPath string `json:"fullPath"`
 }
 
 type WorkItemType struct {

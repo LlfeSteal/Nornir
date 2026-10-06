@@ -64,12 +64,14 @@ func main() {
 	})
 	r.GET("/api/gantt", cfg.handleGantt)
 	r.GET("/api/labels", cfg.handleLabels)
+	r.GET("/api/subgroups", cfg.handleSubgroups)
 
 	// Warm the cache with the configured token, so the first visitor doesn't wait for GitLab.
 	if cfg.token != "" {
 		token := "Bearer " + cfg.token
 		appCache.Prefetch(cfg.ganttKey(token), cfg.fetchGantt(token))
 		appCache.Prefetch(cfg.labelsKey(token), cfg.fetchLabels(token))
+		appCache.Prefetch(cfg.subgroupsKey(token), cfg.fetchSubgroups(token))
 	}
 
 	if err := r.Run(":" + cfg.port); err != nil {
@@ -98,6 +100,10 @@ func (cfg config) ganttKey(token string) string {
 
 func (cfg config) labelsKey(token string) string {
 	return "labels:" + tokenFingerprint(token) + ":" + cfg.group
+}
+
+func (cfg config) subgroupsKey(token string) string {
+	return "subgroups:" + tokenFingerprint(token) + ":" + cfg.group
 }
 
 func (cfg config) handleGantt(c *gin.Context) {
@@ -174,6 +180,29 @@ func (cfg config) fetchLabels(token string) cache.FetchFunc {
 		out := make([]model.Label, 0, len(labels))
 		for _, l := range labels {
 			out = append(out, model.Label{Title: l.Title, Color: l.Color})
+		}
+		return json.Marshal(out)
+	}
+}
+
+// handleSubgroups lists the subgroups of the group (every level), for the subgroup filter.
+func (cfg config) handleSubgroups(c *gin.Context) {
+	token := cfg.resolveToken(c)
+	if token == "" {
+		return
+	}
+	serveCached(c, cfg.subgroupsKey(token), cfg.fetchSubgroups(token))
+}
+
+func (cfg config) fetchSubgroups(token string) cache.FetchFunc {
+	return func(ctx context.Context) ([]byte, error) {
+		subgroups, err := gitlab.FetchSubgroups(ctx, cfg.gitlabURL, token, cfg.group)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]model.Subgroup, 0, len(subgroups))
+		for _, s := range subgroups {
+			out = append(out, model.Subgroup{Path: s.Path, Name: s.Name})
 		}
 		return json.Marshal(out)
 	}

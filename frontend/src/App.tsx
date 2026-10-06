@@ -5,12 +5,12 @@ import { Legend } from './components/Legend';
 import { FilterBar } from './components/FilterBar';
 import { SummaryBar } from './components/SummaryBar';
 import { EmptyState, ErrorBanner, Skeleton } from './components/StateViews';
-import { AppConfig, errorMessage, fetchConfig, fetchGantt, fetchLabels } from './api/gantt';
-import { GanttTask, Label } from './types/gantt';
+import { AppConfig, errorMessage, fetchConfig, fetchGantt, fetchLabels, fetchSubgroups } from './api/gantt';
+import { GanttTask, Label, Subgroup } from './types/gantt';
 import { useAppearance } from './utils/appearance';
 import { ViewMode } from './utils/timeline';
 import { withoutClosed } from './utils/flatten';
-import { DEFAULT_FILTERS, Filters, applyFilters, labelOptions } from './utils/filters';
+import { DEFAULT_FILTERS, Filters, applyFilters, labelOptions, subgroupOptions } from './utils/filters';
 import { attentionIndex } from './utils/attention';
 import { readPortfolios, usePortfolios } from './utils/portfolios';
 import { decodeView, encodeView, viewKey } from './utils/urlState';
@@ -45,6 +45,7 @@ export const App: React.FC = () => {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [data, setData] = useState<GanttTask[] | null>(null);
   const [groupLabels, setGroupLabels] = useState<Label[]>([]);
+  const [subgroups, setSubgroups] = useState<Subgroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -73,6 +74,8 @@ export const App: React.FC = () => {
     // The group's labels load on their own (many pages on a large group) and never block
     // the chart: without them, the Labels menu still lists the labels found on the items.
     fetchLabels(refresh).then(setGroupLabels, () => undefined);
+    // Same for the subgroups: the menu starts with those found on the items.
+    fetchSubgroups(refresh).then(setSubgroups, () => undefined);
     try {
       const { tasks, fetchedAt } = await fetchGantt(refresh);
       setData(tasks);
@@ -115,6 +118,10 @@ export const App: React.FC = () => {
     [inPeriod, deferredFilters, attention],
   );
   const labels = useMemo(() => labelOptions(groupLabels, openData ?? []), [groupLabels, openData]);
+  const subgroupMenu = useMemo(
+    () => subgroupOptions(config?.group ?? '', subgroups, openData ?? []),
+    [config, subgroups, openData],
+  );
 
   // The view lives in the URL, so a reload or a link shows the same chart. Defaults are left
   // out; replaceState, so that Back isn't flooded with every keystroke.
@@ -192,6 +199,7 @@ export const App: React.FC = () => {
             filters={filters}
             onChange={setFilters}
             labels={labels}
+            subgroups={subgroupMenu}
             portfolios={portfolios}
             viewKey={currentKey}
             onApplyView={applyView}

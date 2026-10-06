@@ -28,10 +28,15 @@ func fakeGitLab(t *testing.T, release <-chan struct{}) (*httptest.Server, *int32
 		case strings.Contains(string(body), "GetGanttWorkItems"):
 			atomic.AddInt32(&workItemQueries, 1)
 			io.WriteString(w, `{"data":{"group":{"workItems":{"pageInfo":{"hasNextPage":false},"nodes":[
-				{"id":"gid://gitlab/WorkItem/1","title":"Epic","state":"OPEN","workItemType":{"name":"Epic"},"widgets":[]}]}}}}`)
+				{"id":"gid://gitlab/WorkItem/1","title":"Epic","state":"OPEN","workItemType":{"name":"Epic"},"widgets":[]},
+				{"id":"gid://gitlab/WorkItem/2","title":"Issue","state":"OPEN","workItemType":{"name":"Issue"},"widgets":[],
+				 "namespace":{"id":"gid://gitlab/Namespaces::ProjectNamespace/7","fullPath":"demo/group/team/app"}}]}}}}`)
 		case strings.Contains(string(body), "GetGroupMilestones"):
 			io.WriteString(w, `{"data":{"group":{"milestones":{"pageInfo":{"hasNextPage":false},"nodes":[
 				{"id":"gid://gitlab/Milestone/1","title":"Sprint","state":"active","webPath":"/m/1"}]}}}}`)
+		case strings.Contains(string(body), "GetSubgroups"):
+			io.WriteString(w, `{"data":{"group":{"descendantGroups":{"pageInfo":{"hasNextPage":false},"nodes":[
+				{"fullPath":"demo/group/team/core","name":"Core"},{"fullPath":"demo/group/team","name":"Team"}]}}}}`)
 		default:
 			io.WriteString(w, `{"data":{"group":{"labels":{"pageInfo":{"hasNextPage":false},"nodes":[{"title":"bug","color":"#d9534f"}]}}}}`)
 		}
@@ -47,6 +52,7 @@ func newRouter(t *testing.T, gitlabURL string) *gin.Engine {
 	r := gin.New()
 	r.GET("/api/gantt", cfg.handleGantt)
 	r.GET("/api/labels", cfg.handleLabels)
+	r.GET("/api/subgroups", cfg.handleSubgroups)
 	return r
 }
 
@@ -99,7 +105,7 @@ func TestGanttRequestsShareOneGitLabFetch(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &tree); err != nil {
 		t.Fatal(err)
 	}
-	if len(tree) != 2 || tree[0].Name != "[Milestone] Sprint" || tree[1].Name != "Epic" {
+	if len(tree) != 3 || tree[0].Name != "[Milestone] Sprint" || tree[1].Name != "Epic" || tree[2].Name != "Issue" {
 		t.Fatalf("unexpected tree: %s", w.Body)
 	}
 }
@@ -115,5 +121,40 @@ func TestLabelsAreCachedToo(t *testing.T) {
 	}
 	if w := get(r, "/api/labels"); w.Header().Get("X-Cache") != "HIT" {
 		t.Fatalf("X-Cache = %q, want HIT", w.Header().Get("X-Cache"))
+	}
+}
+
+func TestSubgroupsAreListedRelativeToTheGroup(t *testing.T) {
+	release := make(chan struct{})
+	close(release)
+	gitlab, _ := fakeGitLab(t, release)
+	r := newRouter(t, gitlab.URL)
+
+	want := `[{"path":"team","name":"Team"},{"path":"team/core","name":"Core"}]`
+	if w := get(r, "/api/subgroups"); w.Code != http.StatusOK || w.Body.String() != want {
+		t.Fatalf("got %d %s, want %s", w.Code, w.Body, want)
+	}
+	if w := get(r, "/api/subgroups"); w.Header().Get("X-Cache") != "HIT" {
+		t.Fatalf("X-Cache = %q, want HIT", w.Header().Get("X-Cache"))
+	}
+}
+
+func TestGanttRowsCarryTheirSubgroup(t *testing.T) {
+	release := make(chan struct{})
+	close(release)
+	gitlab, _ := fakeGitLab(t, release)
+	r := newRouter(t, gitlab.URL)
+
+	w := get(r, "/api/gantt")
+	var tree []model.GanttTask
+	if err := json.Unmarshal(w.Body.Bytes(), &tree); err != nil {
+		t.Fatal(err)
+	}
+	subgroups := map[string]string{}
+	for _, task := range tree {
+		subgroups[task.Name] = task.Subgroup
+	}
+	if subgroups["Epic"] != "" || subgroups["Issue"] != "team" {
+		t.Fatalf("subgroups = %v, want Epic in the group and Issue in team", subgroups)
 	}
 }

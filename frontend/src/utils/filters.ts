@@ -1,15 +1,16 @@
-import { GanttTask, GanttTaskType, HealthStatus, Label } from '../types/gantt';
+import { GanttTask, GanttTaskType, HealthStatus, Label, Subgroup } from '../types/gantt';
 import type { AttentionFlag, AttentionIndex } from './attention';
 import { HEALTH_LABELS } from './health';
 
 /** What the filter bar asks for: the types of items to show (all of them by default, none =
- * nothing), the labels they must carry (any of them), their health status (any of them), what
- * needs attention (any of it), whether they must be blocked and a text their name must
- * contain. */
+ * nothing), the labels they must carry (any of them), the GitLab subgroups they belong to (any
+ * of them), their health status (any of them), what needs attention (any of it), whether they
+ * must be blocked and a text their name must contain. */
 export interface Filters {
   search: string;
   types: GanttTaskType[];
   labels: string[]; // label titles
+  subgroups: string[]; // subgroup paths relative to the group, or MAIN_GROUP
   health: HealthStatus[];
   attention: AttentionFlag[]; // see attention.ts
   blocked: boolean; // only items with an open blocker
@@ -17,13 +18,25 @@ export interface Filters {
 
 export const ALL_TYPES: GanttTaskType[] = ['milestone', 'epic', 'issue'];
 
-export const DEFAULT_FILTERS: Filters = { search: '', types: ALL_TYPES, labels: [], health: [], attention: [], blocked: false };
+export const DEFAULT_FILTERS: Filters = {
+  search: '',
+  types: ALL_TYPES,
+  labels: [],
+  subgroups: [],
+  health: [],
+  attention: [],
+  blocked: false,
+};
+
+/** The subgroup filter's value for the items of the group itself (outside its subgroups). */
+export const MAIN_GROUP = '.';
 
 export function isFiltering(filters: Filters): boolean {
   return (
     filters.search.trim() !== '' ||
     ALL_TYPES.some((type) => !filters.types.includes(type)) ||
     filters.labels.length > 0 ||
+    filters.subgroups.length > 0 ||
     filters.health.length > 0 ||
     filters.attention.length > 0 ||
     filters.blocked
@@ -60,6 +73,15 @@ function hasLabel(node: GanttTask, labels: string[]): boolean {
   return node.type === 'milestone' && !!node.children?.some((child) => hasLabel(child, labels));
 }
 
+/** Whether the item belongs to one of the subgroups: a subgroup holds the items of its own
+ * subgroups too, MAIN_GROUP the items outside every subgroup. Milestones belong to no group:
+ * they match when one of their items does. */
+function inSubgroup(node: GanttTask, subgroups: string[]): boolean {
+  if (node.type === 'milestone') return !!node.children?.some((child) => inSubgroup(child, subgroups));
+  const own = node.subgroup;
+  return subgroups.some((path) => (path === MAIN_GROUP ? !own : !!own && (own === path || own.startsWith(`${path}/`))));
+}
+
 /** Whether the item's own health status is one of these. Milestones have none: they match
  * when one of their open items does. */
 function hasHealth(node: GanttTask, health: HealthStatus[]): boolean {
@@ -91,6 +113,7 @@ export function applyFilters(tree: GanttTask[], filters: Filters, attention?: At
   const matches = (node: GanttTask) =>
     filters.types.includes(node.type) &&
     (filters.labels.length === 0 || hasLabel(node, filters.labels)) &&
+    (filters.subgroups.length === 0 || inSubgroup(node, filters.subgroups)) &&
     (filters.health.length === 0 || hasHealth(node, filters.health)) &&
     (filters.attention.length === 0 || flagged(node)) &&
     (!filters.blocked || !!node.blockedBy?.some((ref) => !ref.closed)) &&
@@ -119,6 +142,8 @@ export interface FilterOption {
   value: string;
   label: string;
   detail?: string; // secondary text
+  depth?: number; // indentation level, for a hierarchy (dropped while searching)
+  context?: string; // where the option sits in the hierarchy: shown and searched while searching
   color?: string; // dot color, e.g. the label's
   section?: string; // options are grouped under their section title, in order
 }
@@ -140,5 +165,40 @@ export function labelOptions(groupLabels: Label[], tree: GanttTask[]): FilterOpt
   return [
     ...[...used.values()].sort(byTitle).map(option('In this chart')),
     ...[...others].sort(byTitle).map(option('Other labels')),
+  ];
+}
+
+/** The options of the Subgroups menu: the group's own items first, then every subgroup in
+ * path order (a subgroup right before its own), indented by level. The subgroups come from
+ * /api/subgroups, plus those found on the items (and their parents) in case it hasn't
+ * answered: named after their last path segment then. groupPath: the displayed group. */
+export function subgroupOptions(groupPath: string, subgroups: Subgroup[], tree: GanttTask[]): FilterOption[] {
+  const names = new Map<string, string>();
+  const collect = (list: GanttTask[]) =>
+    list.forEach((node) => {
+      for (let path = node.subgroup; path && !names.has(path); path = path.slice(0, Math.max(path.lastIndexOf('/'), 0))) {
+        names.set(path, path.slice(path.lastIndexOf('/') + 1));
+      }
+      if (node.children) collect(node.children);
+    });
+  collect(tree);
+  subgroups.forEach((subgroup) => names.set(subgroup.path, subgroup.name));
+  if (names.size === 0) return [];
+  const group = groupPath.slice(groupPath.lastIndexOf('/') + 1) || 'Group';
+  const paths = [...names.keys()].sort((a, b) => {
+    // Compare segment by segment so that "a/b" comes right after "a", before "a-c".
+    const x = a.toLowerCase().split('/');
+    const y = b.toLowerCase().split('/');
+    for (let i = 0; i < Math.min(x.length, y.length); i++) {
+      if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+    }
+    return x.length - y.length;
+  });
+  return [
+    { value: MAIN_GROUP, label: `${group} (outside subgroups)` },
+    ...paths.map((path) => {
+      const cut = path.lastIndexOf('/');
+      return { value: path, label: names.get(path)!, depth: path.split('/').length, context: cut > 0 ? path.slice(0, cut) : undefined };
+    }),
   ];
 }

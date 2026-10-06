@@ -110,6 +110,7 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 				End:         end,
 				WebURL:      node.WebURL,
 				Labels:      extractLabels(node.Widgets),
+				Subgroup:    node.Subgroup,
 				Health:      extractHealth(node.Widgets),
 				NoStartDate: noStart,
 				NoDueDate:   noDue,

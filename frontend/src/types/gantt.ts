@@ -14,6 +14,12 @@ export interface Label {
   color: string;           // Hex color from GitLab, e.g. "#428bca"
 }
 
+/** A subgroup of the displayed group, at any level. */
+export interface Subgroup {
+  path: string;            // Relative to the group, e.g. "team/backend"
+  name: string;
+}
+
 /** The other end of a GitLab blocking link (see the backend's DependencyRef). */
 export interface DependencyRef {
   id: string;              // GitLab global ID, never suffixed
@@ -41,6 +47,7 @@ export interface GanttTask {
   noDueDate?: boolean;     // No due date in GitLab: `end` is made up
   noChildren?: boolean;    // Open epic or milestone without any child item in GitLab
   labels?: Label[];
+  subgroup?: string;       // GitLab subgroup, path relative to the group; none in the group itself
   health?: HealthStatus;   // Own GitLab health status
   healthBelow?: HealthCounts; // Open descendants at risk / needing attention, when any
   blockedBy?: DependencyRef[]; // GitLab "blocked by" links (work items only)

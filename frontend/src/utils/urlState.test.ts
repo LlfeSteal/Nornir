@@ -17,6 +17,7 @@ describe('encodeView / decodeView', () => {
         search: 'pay ment',
         types: ['epic' as const, 'issue' as const],
         labels: ['team, a', 'backend'],
+        subgroups: ['.', 'team/core'],
         health: ['atRisk' as const],
         attention: ['late' as const, 'pastParent' as const],
         blocked: true,
@@ -24,7 +25,7 @@ describe('encodeView / decodeView', () => {
     };
     const query = encodeView(view);
     expect(query).toBe(
-      'period=quarter&offset=-2&view=day&q=pay+ment&types=e%2Ci&label=team%2C+a&label=backend&health=atRisk&attention=late%2CpastParent&blocked=1',
+      'period=quarter&offset=-2&view=day&q=pay+ment&types=e%2Ci&label=team%2C+a&label=backend&subgroup=.&subgroup=team%2Fcore&health=atRisk&attention=late%2CpastParent&blocked=1',
     );
     expect(decodeView(`?${query}`)).toEqual(view);
   });
@@ -52,9 +53,10 @@ describe('viewKey', () => {
   });
 
   it('is the same whatever order things were picked in', () => {
-    const view = (labels: string[], attention: ('late' | 'blocked')[]) =>
-      viewKey({ preset: 'quarter', offset: 1, viewMode: 'Week', filters: { ...DEFAULT_FILTERS, labels, attention } });
+    const view = (labels: string[], attention: ('late' | 'blocked')[], subgroups: string[] = []) =>
+      viewKey({ preset: 'quarter', offset: 1, viewMode: 'Week', filters: { ...DEFAULT_FILTERS, labels, attention, subgroups } });
     expect(view(['b', 'a'], ['late', 'blocked'])).toBe(view(['a', 'b'], ['blocked', 'late']));
+    expect(view([], [], ['team', '.'])).toBe(view([], [], ['.', 'team']));
     expect(view(['a'], [])).not.toBe(view(['b'], []));
   });
 
