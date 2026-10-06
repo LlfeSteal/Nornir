@@ -17,6 +17,7 @@ describe('encodeView / decodeView', () => {
         search: 'pay ment',
         types: ['epic' as const, 'issue' as const],
         labels: ['team, a', 'backend'],
+        labelMatch: 'all' as const,
         subgroups: ['.', 'team/core'],
         health: ['atRisk' as const],
         attention: ['late' as const, 'pastParent' as const],
@@ -25,7 +26,7 @@ describe('encodeView / decodeView', () => {
     };
     const query = encodeView(view);
     expect(query).toBe(
-      'period=quarter&offset=-2&view=day&q=pay+ment&types=e%2Ci&label=team%2C+a&label=backend&subgroup=.&subgroup=team%2Fcore&health=atRisk&attention=late%2CpastParent&blocked=1',
+      'period=quarter&offset=-2&view=day&q=pay+ment&types=e%2Ci&label=team%2C+a&label=backend&labelMatch=all&subgroup=.&subgroup=team%2Fcore&health=atRisk&attention=late%2CpastParent&blocked=1',
     );
     expect(decodeView(`?${query}`)).toEqual(view);
   });
@@ -40,6 +41,12 @@ describe('encodeView / decodeView', () => {
     const view = decodeView('period=decade&offset=x&view=year&types=e,z&health=atRisk,bad&attention=late,nope&blocked=yes');
     expect(view).toMatchObject({ preset: undefined, offset: undefined, viewMode: undefined });
     expect(view.filters).toEqual({ ...DEFAULT_FILTERS, types: ['epic'], health: ['atRisk'], attention: ['late'] });
+  });
+
+  it('writes the label match only with labels, and reads an unknown one as any', () => {
+    expect(encodeView({ filters: { ...DEFAULT_FILTERS, labelMatch: 'all' } })).toBe('');
+    expect(encodeView({ filters: { ...DEFAULT_FILTERS, labels: ['a'] } })).toBe('label=a');
+    expect(decodeView('label=a&labelMatch=both').filters.labelMatch).toBe('any');
   });
 
   it('ignores an offset for all dates', () => {
@@ -58,6 +65,9 @@ describe('viewKey', () => {
     expect(view(['b', 'a'], ['late', 'blocked'])).toBe(view(['a', 'b'], ['blocked', 'late']));
     expect(view([], [], ['team', '.'])).toBe(view([], [], ['.', 'team']));
     expect(view(['a'], [])).not.toBe(view(['b'], []));
+    const match = (labelMatch: 'any' | 'all') =>
+      viewKey({ preset: 'quarter', offset: 0, viewMode: 'Week', filters: { ...DEFAULT_FILTERS, labels: ['a', 'b'], labelMatch } });
+    expect(match('all')).not.toBe(match('any'));
   });
 
   it('reads back as the same view', () => {

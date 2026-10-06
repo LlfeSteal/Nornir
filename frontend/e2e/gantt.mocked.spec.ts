@@ -835,6 +835,31 @@ test.describe('Gantt (mocked API)', () => {
       await expect.poll(() => rowNames(page)).toEqual(['[Milestone] Sprint 1', 'Child epic', 'Shared issue', 'Deep issue']);
     });
 
+    test('All shows only the items carrying every selected label, and stays in the URL', async ({ page }) => {
+      await mockApi(page);
+      await page.goto('/');
+      await expect(page.getByTitle('Main epic')).toBeVisible();
+
+      // Any: Standalone issue (frontend) and Deep issue (frontend + bug).
+      await showOnly(page, 'Issues');
+      await pickLabels(page, 'frontend', 'bug');
+      await expect.poll(() => rowNames(page)).toEqual(['Standalone issue', 'Deep issue']);
+
+      await page.getByRole('button', { name: 'Labels: 2 labels' }).click();
+      const popover = page.getByRole('dialog', { name: 'Labels' });
+      await expect(popover.getByRole('radio', { name: 'Any' })).toHaveAttribute('aria-checked', 'true');
+      await popover.getByRole('radio', { name: 'All' }).click();
+      await page.keyboard.press('Escape');
+
+      await expect(page.getByRole('button', { name: 'Labels: All of 2 labels' })).toHaveAttribute('title', 'frontend + bug');
+      await expect.poll(() => rowNames(page)).toEqual(['Deep issue']);
+      await expect(page).toHaveURL(/labelMatch=all/);
+
+      await page.reload();
+      await expect(page.getByRole('button', { name: 'Labels: All of 2 labels' })).toBeVisible();
+      await expect.poll(() => rowNames(page)).toEqual(['Deep issue']);
+    });
+
     test('search finds items of every type by name', async ({ page }) => {
       await mockApi(page);
       await page.goto('/');

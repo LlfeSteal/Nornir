@@ -3,18 +3,22 @@ import type { AttentionFlag, AttentionIndex } from './attention';
 import { HEALTH_LABELS } from './health';
 
 /** What the filter bar asks for: the types of items to show (all of them by default, none =
- * nothing), the labels they must carry (any of them), the GitLab subgroups they belong to (any
+ * nothing), the labels they must carry (any or all of them, `labelMatch`), the GitLab subgroups they belong to (any
  * of them), their health status (any of them), what needs attention (any of it), whether they
  * must be blocked and a text their name must contain. */
 export interface Filters {
   search: string;
   types: GanttTaskType[];
   labels: string[]; // label titles
+  labelMatch: LabelMatch; // whether an item needs any of the labels or all of them
   subgroups: string[]; // subgroup paths relative to the group, or MAIN_GROUP
   health: HealthStatus[];
   attention: AttentionFlag[]; // see attention.ts
   blocked: boolean; // only items with an open blocker
 }
+
+/** Any: an item carrying one of the labels (OR); all: an item carrying every one (AND). */
+export type LabelMatch = 'any' | 'all';
 
 export const ALL_TYPES: GanttTaskType[] = ['milestone', 'epic', 'issue'];
 
@@ -22,6 +26,7 @@ export const DEFAULT_FILTERS: Filters = {
   search: '',
   types: ALL_TYPES,
   labels: [],
+  labelMatch: 'any',
   subgroups: [],
   health: [],
   attention: [],
@@ -66,11 +71,13 @@ function withSuffix(node: GanttTask, suffix: string): GanttTask {
   };
 }
 
-/** Whether the item carries one of the labels. Milestones have no labels of their own: they
- * count as labeled when one of their items is. */
-function hasLabel(node: GanttTask, labels: string[]): boolean {
-  if (node.labels?.some((label) => labels.includes(label.title))) return true;
-  return node.type === 'milestone' && !!node.children?.some((child) => hasLabel(child, labels));
+/** Whether the item carries one of the labels (any) or every one of them (all). Milestones
+ * have no labels of their own: they count as labeled when one of their items is — a single
+ * item carrying them all, for all. */
+function hasLabel(node: GanttTask, labels: string[], match: LabelMatch): boolean {
+  const carries = (title: string) => !!node.labels?.some((label) => label.title === title);
+  if (match === 'all' ? labels.every(carries) : labels.some(carries)) return true;
+  return node.type === 'milestone' && !!node.children?.some((child) => hasLabel(child, labels, match));
 }
 
 /** Whether the item belongs to one of the subgroups: a subgroup holds the items of its own
@@ -112,7 +119,7 @@ export function applyFilters(tree: GanttTask[], filters: Filters, attention?: At
   };
   const matches = (node: GanttTask) =>
     filters.types.includes(node.type) &&
-    (filters.labels.length === 0 || hasLabel(node, filters.labels)) &&
+    (filters.labels.length === 0 || hasLabel(node, filters.labels, filters.labelMatch)) &&
     (filters.subgroups.length === 0 || inSubgroup(node, filters.subgroups)) &&
     (filters.health.length === 0 || hasHealth(node, filters.health)) &&
     (filters.attention.length === 0 || flagged(node)) &&

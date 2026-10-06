@@ -12,10 +12,13 @@ interface Props {
   selected: string[];
   onChange: (values: string[]) => void;
   emptyText: string; // shown when there are no options at all
+  header?: React.ReactNode; // above the search field, e.g. the Labels menu's Any / All switch
+  summary?: (names: string[]) => string; // button text for several options (default "3 <plural>")
+  joiner?: string; // between the names of the selected options in the help tag (default ", ")
 }
 
 /** Pop-up button with a macOS-style popover of checkable options: pick one or several. */
-export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, onChange, emptyText }) => {
+export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, onChange, emptyText, header, summary, joiner = ', ' }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const anchor = useRef<HTMLDivElement>(null);
@@ -79,7 +82,12 @@ export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, 
   };
 
   const optionLabel = (value: string) => options.find((o) => o.value === value)?.label ?? value;
-  const text = selected.length === 0 ? label : selected.length === 1 ? optionLabel(selected[0]) : `${selected.length} ${plural}`;
+  const text =
+    selected.length === 0
+      ? label
+      : selected.length === 1
+        ? optionLabel(selected[0])
+        : (summary?.(selected.map(optionLabel)) ?? `${selected.length} ${plural}`);
   let section: string | undefined;
 
   return (
@@ -92,7 +100,7 @@ export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, 
         aria-haspopup="dialog"
         aria-expanded={open}
         data-active={selected.length > 0 ? 'true' : undefined}
-        title={selected.length > 1 ? selected.map(optionLabel).join(', ') : undefined}
+        title={selected.length > 1 ? selected.map(optionLabel).join(joiner) : undefined}
         onClick={() => (open ? close(false) : setOpen(true))}
       >
         <span className="popup-button-text">{text}</span>
@@ -100,6 +108,7 @@ export const FilterMenu: React.FC<Props> = ({ label, plural, options, selected, 
       </button>
       {open && (
         <div className="menu filter-popover" role="dialog" aria-label={label} onKeyDown={onKeyDown}>
+          {header && <div className="menu-match">{header}</div>}
           {searchable && (
             <div className="menu-search">
               <SearchIcon size={13} />

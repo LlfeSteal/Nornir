@@ -158,3 +158,28 @@ describe('subgroupOptions', () => {
     expect(subgroupOptions('org/product', [], [task('I1')])).toEqual([]);
   });
 });
+
+describe('label match', () => {
+  const bug = { title: 'bug', color: '#f00' };
+  const ui = { title: 'ui', color: '#0f0' };
+  const labelTree = [
+    // The milestone's items carry bug and ui, but not on the same item.
+    task('M1', { type: 'milestone', children: [task('I1_ms_I1', { name: 'Crash', labels: [bug] }), task('I2_ms_I2', { labels: [ui] })] }),
+    task('E1', {
+      type: 'epic',
+      labels: [bug],
+      children: [task('I1', { name: 'Crash', labels: [bug] }), task('I2', { labels: [ui] }), task('I3', { name: 'Ugly crash', labels: [bug, ui] })],
+    }),
+  ];
+  const ids = (fields: Partial<Filters>) => applyFilters(labelTree, { ...DEFAULT_FILTERS, ...fields }).map((node) => node.id);
+
+  it('needs any of the labels by default', () => {
+    expect(ids({ labels: ['bug', 'ui'] })).toEqual(['M1', 'E1', 'I1_ms_I1_top', 'I2_ms_I2_top', 'I3_top']);
+  });
+
+  it('needs every label on the same item with all', () => {
+    expect(isFiltering({ ...DEFAULT_FILTERS, labelMatch: 'all' })).toBe(false);
+    expect(ids({ labels: ['bug', 'ui'], labelMatch: 'all' })).toEqual(['I3_top']);
+    expect(ids({ labels: ['bug'], labelMatch: 'all', types: ['issue'], search: 'crash' })).toEqual(['I1_ms_I1_top', 'I3_top']);
+  });
+});

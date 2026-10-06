@@ -1,11 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { FilterMenu } from './FilterMenu';
+import { SegmentedControl } from './SegmentedControl';
 import { BlockedIcon, ClearIcon, LinkIcon, SearchIcon } from './Icons';
 import { PortfolioMenu } from './PortfolioMenu';
 import { Portfolios } from '../utils/portfolios';
 import { GanttTaskType } from '../types/gantt';
-import { DEFAULT_FILTERS, FilterOption, Filters, HEALTH_OPTIONS, isFiltering } from '../utils/filters';
+import { DEFAULT_FILTERS, FilterOption, Filters, HEALTH_OPTIONS, isFiltering, LabelMatch } from '../utils/filters';
 import { HealthStatus } from '../types/gantt';
+
+const LABEL_MATCH: { value: LabelMatch; label: string }[] = [
+  { value: 'any', label: 'Any' },
+  { value: 'all', label: 'All' },
+];
 
 const TYPES: { value: GanttTaskType; label: string }[] = [
   { value: 'milestone', label: 'Milestones' },
@@ -102,6 +108,19 @@ export const FilterBar: React.FC<Props> = ({
         selected={filters.labels}
         onChange={(values) => onChange({ ...filters, labels: values })}
         emptyText="No labels in this group"
+        header={
+          <>
+            <span className="menu-match-label">Match</span>
+            <SegmentedControl
+              label="Match"
+              options={LABEL_MATCH}
+              value={filters.labelMatch}
+              onChange={(labelMatch) => onChange({ ...filters, labelMatch })}
+            />
+          </>
+        }
+        summary={filters.labelMatch === 'all' ? (names) => `All of ${names.length} labels` : undefined}
+        joiner={filters.labelMatch === 'all' ? ' + ' : ', '}
       />
       {(subgroups.length > 0 || filters.subgroups.length > 0) && (
         <FilterMenu
