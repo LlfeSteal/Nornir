@@ -34,6 +34,7 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
           __typename
           type
           ... on WorkItemWidgetStartAndDueDate { startDate dueDate }
+          ... on WorkItemWidgetIteration { iteration { startDate dueDate } }
           ... on WorkItemWidgetMilestone { milestone { id title state startDate dueDate webPath } }
           ... on WorkItemWidgetHierarchy { parent { id } }
           ... on WorkItemWidgetWeight { weight }
@@ -52,7 +53,11 @@ const workItemsQuery = `query GetGanttWorkItems($fullPath: ID!, $afterCursor: St
 fragment LinkedNodes on LinkedWorkItemTypeConnection {
   nodes {
     workItemState
-    workItem { id title webUrl widgets(onlyTypes: [START_AND_DUE_DATE]) { __typename ... on WorkItemWidgetStartAndDueDate { startDate dueDate } } }
+    workItem { id title webUrl widgets(onlyTypes: [START_AND_DUE_DATE, ITERATION]) {
+      __typename
+      ... on WorkItemWidgetStartAndDueDate { startDate dueDate }
+      ... on WorkItemWidgetIteration { iteration { startDate dueDate } }
+    } }
   }
 }`
 

@@ -14,6 +14,7 @@ const (
 
 	typenameDates     = "WorkItemWidgetStartAndDueDate"
 	typenameMilestone = "WorkItemWidgetMilestone"
+	typenameIteration = "WorkItemWidgetIteration"
 	typenameHierarchy = "WorkItemWidgetHierarchy"
 	typenameWeight    = "WorkItemWidgetWeight"
 	typenameLabels    = "WorkItemWidgetLabels"
@@ -100,12 +101,13 @@ func buildGanttTree(nodes []WorkItemNode, groupMilestones []Milestone, now time.
 		if _, dup := items[node.ID]; dup {
 			continue
 		}
-		start, end, noStart, noDue := extractDates(node.Widgets, now)
+		taskType := mapType(node.WorkItemType.Name)
+		start, end, noStart, noDue := extractDates(node.Widgets, taskType == model.TypeIssue, now)
 		item := &parsedItem{
 			task: model.GanttTask{
 				ID:          node.ID,
 				Name:        node.Title,
-				Type:        mapType(node.WorkItemType.Name),
+				Type:        taskType,
 				Start:       start,
 				End:         end,
 				WebURL:      node.WebURL,
@@ -407,7 +409,8 @@ func extractLinks(widgets []WorkItemWidget, items map[string]*parsedItem, now ti
 				})
 				continue
 			}
-			start, end, noStart, noDue := extractDates(link.WorkItem.Widgets, now)
+			// Epics have no iteration widget: only issues get their iteration's dates.
+			start, end, noStart, noDue := extractDates(link.WorkItem.Widgets, true, now)
 			out = append(out, model.DependencyRef{
 				ID: link.WorkItem.ID, Name: link.WorkItem.Title, WebURL: link.WorkItem.WebURL,
 				Start: start, End: end, Closed: link.WorkItemState == "CLOSED",
@@ -453,12 +456,26 @@ func extractMilestoneWidget(widgets []WorkItemWidget) *Milestone {
 }
 
 // extractDates returns the dates of an item (see fallbackDates) and which of them are
-// missing in GitLab.
-func extractDates(widgets []WorkItemWidget, now time.Time) (start, end string, noStart, noDue bool) {
+// missing in GitLab. With useIteration (issues), each missing date is taken from the
+// item's iteration, unless it would fall on the wrong side of the item's own other date.
+func extractDates(widgets []WorkItemWidget, useIteration bool, now time.Time) (start, end string, noStart, noDue bool) {
+	var iteration *Iteration
 	for _, w := range widgets {
-		if w.Typename == typenameDates {
+		switch {
+		case w.Typename == typenameDates:
 			start = w.StartDate
 			end = w.DueDate
+		case w.Typename == typenameIteration && w.Iteration != nil:
+			iteration = w.Iteration
+		}
+	}
+	if useIteration && iteration != nil {
+		// YYYY-MM-DD strings compare like dates.
+		if start == "" && (end == "" || iteration.StartDate <= end) {
+			start = iteration.StartDate
+		}
+		if end == "" && (start == "" || iteration.DueDate >= start) {
+			end = iteration.DueDate
 		}
 	}
 	return fallbackDates(start, end, now)

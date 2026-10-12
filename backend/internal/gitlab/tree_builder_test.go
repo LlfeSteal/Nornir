@@ -33,6 +33,10 @@ func dates(start, due string) WorkItemWidget {
 	return WorkItemWidget{Typename: typenameDates, Type: "START_AND_DUE_DATE", StartDate: start, DueDate: due}
 }
 
+func iteration(start, due string) WorkItemWidget {
+	return WorkItemWidget{Typename: typenameIteration, Type: "ITERATION", Iteration: &Iteration{StartDate: start, DueDate: due}}
+}
+
 // ids returns the IDs of one tree level.
 func milestoneTitled(id, title string) WorkItemWidget {
 	return WorkItemWidget{Typename: typenameMilestone, Type: "MILESTONE", Milestone: &Milestone{ID: id, Title: title}}
@@ -183,12 +187,46 @@ func TestDateFallbacks(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			start, end, noStart, noDue := extractDates(tc.widgets, fixedNow)
+			start, end, noStart, noDue := extractDates(tc.widgets, false, fixedNow)
 			if start != tc.wantStart || end != tc.wantEnd {
 				t.Fatalf("got %s..%s, want %s..%s", start, end, tc.wantStart, tc.wantEnd)
 			}
 			if noStart != tc.wantNoStart || noDue != tc.wantNoDue {
 				t.Fatalf("got noStart=%v noDue=%v, want %v %v", noStart, noDue, tc.wantNoStart, tc.wantNoDue)
+			}
+		})
+	}
+}
+
+func TestIssueDatesFromIteration(t *testing.T) {
+	sprint := iteration("2026-03-02", "2026-03-15")
+	cases := []struct {
+		name                   string
+		typ                    string
+		widgets                []WorkItemWidget
+		wantStart, wantEnd     string
+		wantNoStart, wantNoDue bool
+	}{
+		{"no dates", "Issue", []WorkItemWidget{dates("", ""), sprint}, "2026-03-02", "2026-03-15", false, false},
+		{"due only", "Issue", []WorkItemWidget{dates("", "2026-03-10"), sprint}, "2026-03-02", "2026-03-10", false, false},
+		{"start only", "Issue", []WorkItemWidget{dates("2026-03-05", ""), sprint}, "2026-03-05", "2026-03-15", false, false},
+		{"own dates win", "Issue", []WorkItemWidget{dates("2026-04-01", "2026-04-20"), sprint}, "2026-04-01", "2026-04-20", false, false},
+		// The iteration would start after the item's own due date: usual fallback.
+		{"iteration after due", "Issue", []WorkItemWidget{dates("", "2026-02-20"), sprint}, "2026-02-06", "2026-02-20", true, false},
+		{"iteration before start", "Task", []WorkItemWidget{dates("2026-04-01", ""), sprint}, "2026-04-01", "2026-04-15", false, true},
+		{"task", "Task", []WorkItemWidget{sprint}, "2026-03-02", "2026-03-15", false, false},
+		{"epic ignores it", "Epic", []WorkItemWidget{dates("", ""), sprint}, "2026-01-10", "2026-01-11", true, true},
+		{"no iteration", "Issue", []WorkItemWidget{dates("", "")}, "2026-01-10", "2026-01-11", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tree := mustBuild(t, []WorkItemNode{node("x", tc.typ, "OPEN", tc.widgets...)}, nil)
+			got := tree[0]
+			if got.Start != tc.wantStart || got.End != tc.wantEnd {
+				t.Fatalf("got %s..%s, want %s..%s", got.Start, got.End, tc.wantStart, tc.wantEnd)
+			}
+			if got.NoStartDate != tc.wantNoStart || got.NoDueDate != tc.wantNoDue {
+				t.Fatalf("got noStart=%v noDue=%v, want %v %v", got.NoStartDate, got.NoDueDate, tc.wantNoStart, tc.wantNoDue)
 			}
 		})
 	}
@@ -695,6 +733,7 @@ func TestBuildGanttTree_BlockingLinks(t *testing.T) {
 				linked("blocker", "CLOSED"),
 				linked("blocker", "CLOSED"), // duplicate
 				linked("outside", "OPEN", dates("", "2026-03-01")),
+				linked("sprinted", "OPEN", dates("", ""), iteration("2026-04-06", "2026-04-19")),
 			}, []LinkedItem{linked("issue", "OPEN")})),
 		node("issue", "Issue", "OPEN", parent("epic"), links([]LinkedItem{linked("epic", "OPEN")}, nil)),
 	}, nil)
@@ -710,8 +749,8 @@ func TestBuildGanttTree_BlockingLinks(t *testing.T) {
 	walk(tree)
 
 	epic := byID["epic"]
-	if len(epic.BlockedBy) != 2 {
-		t.Fatalf("epic blockedBy = %+v, want 2 links", epic.BlockedBy)
+	if len(epic.BlockedBy) != 3 {
+		t.Fatalf("epic blockedBy = %+v, want 3 links", epic.BlockedBy)
 	}
 	in := epic.BlockedBy[0]
 	// An item of the data is described from it, not from the link.
@@ -724,12 +763,18 @@ func TestBuildGanttTree_BlockingLinks(t *testing.T) {
 	if out != want {
 		t.Errorf("external link = %+v, want %+v", out, want)
 	}
+	// An external issue without dates takes its iteration's.
+	sprinted := epic.BlockedBy[2]
+	want = model.DependencyRef{ID: "sprinted", Name: "linked sprinted", WebURL: "https://x/sprinted", Start: "2026-04-06", End: "2026-04-19", External: true}
+	if sprinted != want {
+		t.Errorf("external link in an iteration = %+v, want %+v", sprinted, want)
+	}
 	if len(epic.Blocking) != 1 || epic.Blocking[0].ID != "issue" || epic.Blocking[0].External {
 		t.Errorf("epic blocking = %+v, want the internal issue", epic.Blocking)
 	}
 
 	// Every copy carries the links: the epic sits under its milestone and at the top level.
-	if copy := byID["epic_root_epic"]; len(copy.BlockedBy) != 2 || len(copy.Blocking) != 1 {
+	if copy := byID["epic_root_epic"]; len(copy.BlockedBy) != 3 || len(copy.Blocking) != 1 {
 		t.Errorf("root copy links = %+v / %+v", copy.BlockedBy, copy.Blocking)
 	}
 	if issue := byID["issue_root_epic"]; len(issue.BlockedBy) != 1 || issue.BlockedBy[0].ID != "epic" {

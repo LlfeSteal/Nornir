@@ -94,6 +94,7 @@ type WorkItemWidget struct {
 	StartDate string     `json:"startDate,omitempty"`
 	DueDate   string     `json:"dueDate,omitempty"`
 	Milestone *Milestone `json:"milestone,omitempty"`
+	Iteration *Iteration `json:"iteration,omitempty"`
 	Parent    *ParentRef `json:"parent,omitempty"`
 	Weight    *int       `json:"weight,omitempty"` // nil: no weight set in GitLab
 	Labels    *LabelConn `json:"labels,omitempty"`
@@ -129,6 +130,13 @@ type Milestone struct {
 	State     string `json:"state"`   // "active" or "closed"
 	WebPath   string `json:"webPath"` // GitLab only exposes the relative path for milestones
 	WebURL    string `json:"-"`       // absolute URL, computed by the client from WebPath
+}
+
+// Iteration is the GitLab iteration (sprint) of an issue: its dates stand in for the
+// issue's missing ones (see extractDates).
+type Iteration struct {
+	StartDate string `json:"startDate"`
+	DueDate   string `json:"dueDate"`
 }
 
 type ParentRef struct {
