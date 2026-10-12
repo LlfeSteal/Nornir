@@ -5,7 +5,7 @@ import { PERIOD_PRESETS, PeriodPreset } from './period';
 import { ViewMode } from './timeline';
 
 // The view in the page's URL, so that a link shows someone else the same chart: period,
-// time scale and filters (a portfolio travels as its values, never by name). Defaults are left
+// time scale, filters and their layout (a portfolio travels as its values, never by name). Defaults are left
 // out, so a plain view has a plain URL; unknown values are dropped one by one. A portfolio
 // stores its view the same way (`viewKey`).
 
@@ -45,6 +45,7 @@ export function encodeView({ preset, offset, viewMode, filters }: ViewState): st
   if (filters.health.length) params.set('health', filters.health.join(','));
   if (filters.attention.length) params.set('attention', filters.attention.join(','));
   if (filters.blocked) params.set('blocked', '1');
+  if (filters.layout === 'tree') params.set('layout', 'tree');
   return params.toString();
 }
 
@@ -74,6 +75,7 @@ export function decodeView(search: string): ViewState {
       health: only(list(params.get('health')), HEALTH),
       attention: only(list(params.get('attention')), ATTENTION_FLAGS) as AttentionFlag[],
       blocked: params.get('blocked') === '1',
+      layout: params.get('layout') === 'tree' ? 'tree' : 'list',
     },
   };
 }

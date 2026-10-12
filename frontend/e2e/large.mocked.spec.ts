@@ -51,6 +51,17 @@ test.describe('large group', () => {
     expect(countRows(tree)).toBeGreaterThan(15_000);
   });
 
+  test('searching in the tree layout is quick', async ({ page }) => {
+    await open(page);
+    expect(await timed(async () => {
+      await page.getByRole('textbox', { name: 'Search' }).fill('Issue 1301');
+      await page.getByRole('radiogroup', { name: 'Results' }).getByRole('radio', { name: 'Tree' }).click();
+      await expect(page.locator('.task-list-row[data-filter-context]').first()).toBeVisible();
+      await expect(page.getByTitle('Issue 1301', { exact: true }).first()).toBeVisible();
+    })).toBeLessThan(2_000);
+    expect(await page.locator('.task-list-row').count()).toBeLessThan(100);
+  });
+
   test('the chart shows up quickly and only renders the rows on screen', async ({ page }) => {
     const { elapsed } = await open(page);
     expect(elapsed).toBeLessThan(3_000);
@@ -327,6 +338,27 @@ test.describe('deep hierarchy with duplicates', () => {
       await expect(chip).toHaveAttribute('aria-pressed', 'true');
       await expect(page.locator('.task-list-row').first()).toBeVisible();
     })).toBeLessThan(2_000);
+    expect(await page.locator('.task-list-row').count()).toBeLessThan(100);
+  });
+
+  test('the tree layout opens every issue under its parents quickly, still virtualized', async ({ page }) => {
+    await open(page, deep, '[Milestone] Sprint 00');
+    const show = page.getByRole('group', { name: 'Show' });
+    await show.getByRole('button', { name: 'Milestones' }).click();
+    await show.getByRole('button', { name: 'Epics' }).click();
+    await expect(page.getByTitle('Epic 0', { exact: true })).toHaveCount(0);
+    expect(await timed(async () => {
+      await page.getByRole('radiogroup', { name: 'Results' }).getByRole('radio', { name: 'Tree' }).click();
+      // Every group open: the first milestone, grayed, then its first epic under it.
+      await expect(page.locator('.task-list-row[data-filter-context][data-depth="1"]').first()).toBeVisible();
+    })).toBeLessThan(3_000);
+    expect(await page.locator('.task-list-row').count()).toBeLessThan(100);
+    // At the bottom too.
+    const box = (await page.locator('.gantt-chart').boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 10_000_000);
+    await expect.poll(() => page.locator('.gantt-scroll').evaluate((el) => el.scrollTop)).toBeGreaterThan(1_000_000);
+    await expect(page.locator('.task-list-row').last()).toBeVisible();
     expect(await page.locator('.task-list-row').count()).toBeLessThan(100);
   });
 

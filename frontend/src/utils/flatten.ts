@@ -42,3 +42,17 @@ export function withoutClosed(nodes: GanttTask[]): GanttTask[] {
     .filter((node) => !node.closed)
     .map((node) => (node.children ? { ...node, children: withoutClosed(node.children) } : node));
 }
+
+/** The IDs of the groups to show expanded when every group is open but those collapsed by the
+ * user: only the reachable ones (a collapsed group's subtree isn't visited). */
+export function groupIds(nodes: GanttTask[], collapsed: Set<string>): Set<string> {
+  const ids = new Set<string>();
+  const visit = (list: GanttTask[]) =>
+    list.forEach((node) => {
+      if (!node.children?.length || collapsed.has(node.id)) return;
+      ids.add(node.id);
+      visit(node.children);
+    });
+  visit(nodes);
+  return ids;
+}

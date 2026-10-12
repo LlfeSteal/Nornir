@@ -23,9 +23,16 @@ export function formatDay(date: Date): string {
  * to take the progress from). */
 export function rowSchedule(row: Row) {
   const { node } = row;
-  const isGroup = node.type === 'milestone' || row.hasChildren;
-  if (!isGroup || node.closed || missingDatesMessage(node) || noChildrenMessage(node)) return undefined;
+  if (!isGroupRow(row) || node.closed || missingDatesMessage(node) || noChildrenMessage(node)) return undefined;
   return scheduleStatus(node.progress, node.linearProgress);
+}
+
+/** Whether a row is drawn as a group (epics, milestones, items with children). An open epic with
+ * children in GitLab stays one when the filters or the period hide them all: its progress still
+ * comes from them. */
+export function isGroupRow(row: Row): boolean {
+  const { node } = row;
+  return node.type === 'milestone' || row.hasChildren || (node.type === 'epic' && !node.closed && !node.noChildren);
 }
 
 export const TaskListHeader: React.FC = () => <div className="task-list-header">Name</div>;
@@ -36,7 +43,7 @@ export const TaskListRow: React.FC<{
   onToggle: (id: string) => void;
 }> = ({ row, expanded, onToggle }) => {
   const { node, depth } = row;
-  const isGroup = node.type === 'milestone' || row.hasChildren;
+  const isGroup = isGroupRow(row);
   const missingDates = missingDatesMessage(node);
   const warnings = rowWarnings(node);
   const health = rowHealth(node);
@@ -61,6 +68,7 @@ export const TaskListRow: React.FC<{
       data-external={row.dependency?.external ? 'true' : undefined}
       data-critical={row.dependency?.critical ? 'true' : undefined}
       data-context={row.dependency?.context ? 'true' : undefined}
+      data-filter-context={node.filterContext ? 'true' : undefined}
     >
       <div className="task-list-cell" title={node.name}>
         {row.guides.map((line, level) => (
@@ -158,6 +166,7 @@ export const TooltipContent: React.FC<{ row: Row }> = ({ row }) => {
       </p>
       <p>{progress}% complete</p>
       {row.dependency?.linked && <p className="dependency-place">{dependencyPlace(row)}</p>}
+      {node.filterContext && <p className="context-note">Shown for its place: doesn't match the filters</p>}
       {row.dependency?.critical && (
         <p className="critical-note">
           {row.dependency.criticalVia ? `On the critical path, ${row.dependency.criticalVia}` : 'On the critical path'}

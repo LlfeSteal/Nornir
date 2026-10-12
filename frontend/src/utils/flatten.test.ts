@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { visibleRows, withoutClosed } from './flatten';
+import { groupIds, visibleRows, withoutClosed } from './flatten';
 import { task } from './testing';
 
 const tree = [
@@ -39,5 +39,12 @@ describe('withoutClosed', () => {
     const closedEpic = [task('E', { type: 'epic', closed: true, children: [task('open')] }), task('keep')];
     expect(withoutClosed(closedEpic).map((node) => node.id)).toEqual(['keep']);
     expect(withoutClosed(tree)[1].children?.map((node) => node.id)).toEqual(['I1', 'E2']);
+  });
+});
+
+describe('groupIds', () => {
+  it('opens every group but the collapsed ones, without visiting their subtree', () => {
+    expect([...groupIds(tree, new Set())]).toEqual(['M1', 'E1', 'E2']);
+    expect([...groupIds(tree, new Set(['E1']))]).toEqual(['M1']);
   });
 });

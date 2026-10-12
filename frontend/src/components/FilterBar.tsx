@@ -5,12 +5,17 @@ import { BlockedIcon, ClearIcon, LinkIcon, SearchIcon } from './Icons';
 import { PortfolioMenu } from './PortfolioMenu';
 import { Portfolios } from '../utils/portfolios';
 import { GanttTaskType } from '../types/gantt';
-import { DEFAULT_FILTERS, FilterOption, Filters, HEALTH_OPTIONS, isFiltering, LabelMatch } from '../utils/filters';
+import { clearedFilters, FilterLayout, FilterOption, Filters, HEALTH_OPTIONS, isFiltering, LabelMatch } from '../utils/filters';
 import { HealthStatus } from '../types/gantt';
 
 const LABEL_MATCH: { value: LabelMatch; label: string }[] = [
   { value: 'any', label: 'Any' },
   { value: 'all', label: 'All' },
+];
+
+const LAYOUTS: { value: FilterLayout; label: string }[] = [
+  { value: 'list', label: 'List' },
+  { value: 'tree', label: 'Tree' },
 ];
 
 const TYPES: { value: GanttTaskType; label: string }[] = [
@@ -34,8 +39,8 @@ interface Props {
 }
 
 /** Picks the items to show: a portfolio (a named saved view), search field, item types (all
- * pressed by default, none = nothing), labels, GitLab subgroups, health status and blocked items; then copies a
- * link to the view. */
+ * pressed by default, none = nothing), labels, GitLab subgroups, health status and blocked items;
+ * while filtering, how to show them (List / Tree); then copies a link to the view. */
 export const FilterBar: React.FC<Props> = ({
   filters,
   onChange,
@@ -150,9 +155,17 @@ export const FilterBar: React.FC<Props> = ({
         Blocked
       </button>
       {isFiltering(filters) && (
-        <button type="button" className="button plain" onClick={() => onChange(DEFAULT_FILTERS)}>
-          Clear
-        </button>
+        <>
+          <SegmentedControl
+            label="Results"
+            options={LAYOUTS}
+            value={filters.layout}
+            onChange={(layout) => onChange({ ...filters, layout })}
+          />
+          <button type="button" className="button plain" onClick={() => onChange(clearedFilters(filters))}>
+            Clear
+          </button>
+        </>
       )}
       <CopyLinkButton link={shareLink} />
     </div>

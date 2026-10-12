@@ -22,11 +22,12 @@ describe('encodeView / decodeView', () => {
         health: ['atRisk' as const],
         attention: ['late' as const, 'pastParent' as const],
         blocked: true,
+        layout: 'tree' as const,
       },
     };
     const query = encodeView(view);
     expect(query).toBe(
-      'period=quarter&offset=-2&view=day&q=pay+ment&types=e%2Ci&label=team%2C+a&label=backend&labelMatch=all&subgroup=.&subgroup=team%2Fcore&health=atRisk&attention=late%2CpastParent&blocked=1',
+      'period=quarter&offset=-2&view=day&q=pay+ment&types=e%2Ci&label=team%2C+a&label=backend&labelMatch=all&subgroup=.&subgroup=team%2Fcore&health=atRisk&attention=late%2CpastParent&blocked=1&layout=tree',
     );
     expect(decodeView(`?${query}`)).toEqual(view);
   });
@@ -47,6 +48,12 @@ describe('encodeView / decodeView', () => {
     expect(encodeView({ filters: { ...DEFAULT_FILTERS, labelMatch: 'all' } })).toBe('');
     expect(encodeView({ filters: { ...DEFAULT_FILTERS, labels: ['a'] } })).toBe('label=a');
     expect(decodeView('label=a&labelMatch=both').filters.labelMatch).toBe('any');
+  });
+
+  it('writes the tree layout only, and reads an unknown one as a list', () => {
+    expect(encodeView({ filters: { ...DEFAULT_FILTERS, layout: 'tree' } })).toBe('layout=tree');
+    expect(decodeView('').filters.layout).toBe('list');
+    expect(decodeView('layout=grid').filters.layout).toBe('list');
   });
 
   it('ignores an offset for all dates', () => {

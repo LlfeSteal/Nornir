@@ -5,7 +5,7 @@ import { HEALTH_LABELS } from './health';
 /** What the filter bar asks for: the types of items to show (all of them by default, none =
  * nothing), the labels they must carry (any or all of them, `labelMatch`), the GitLab subgroups they belong to (any
  * of them), their health status (any of them), what needs attention (any of it), whether they
- * must be blocked and a text their name must contain. */
+ * must be blocked and a text their name must contain; and how to show the result (`layout`). */
 export interface Filters {
   search: string;
   types: GanttTaskType[];
@@ -15,7 +15,12 @@ export interface Filters {
   health: HealthStatus[];
   attention: AttentionFlag[]; // see attention.ts
   blocked: boolean; // only items with an open blocker
+  layout: FilterLayout; // how the matching items are shown (not which ones)
 }
+
+/** List: a flat list of the matching items, each with its whole content. Tree: the tree cut down
+ * to the matching items, their ancestors kept (grayed) for their place. */
+export type FilterLayout = 'list' | 'tree';
 
 /** Any: an item carrying one of the labels (OR); all: an item carrying every one (AND). */
 export type LabelMatch = 'any' | 'all';
@@ -31,7 +36,13 @@ export const DEFAULT_FILTERS: Filters = {
   health: [],
   attention: [],
   blocked: false,
+  layout: 'list',
 };
+
+/** No filters, in the same layout: clearing says which items to show, not how. */
+export function clearedFilters(filters: Filters): Filters {
+  return { ...DEFAULT_FILTERS, layout: filters.layout };
+}
 
 /** The subgroup filter's value for the items of the group itself (outside its subgroups). */
 export const MAIN_GROUP = '.';
@@ -73,26 +84,27 @@ function withSuffix(node: GanttTask, suffix: string): GanttTask {
 
 /** Whether the item carries one of the labels (any) or every one of them (all). Milestones
  * have no labels of their own: they count as labeled when one of their items is — a single
- * item carrying them all, for all. */
-function hasLabel(node: GanttTask, labels: string[], match: LabelMatch): boolean {
+ * item carrying them all, for all — unless `strict` (the tree layout shows those items). */
+function hasLabel(node: GanttTask, labels: string[], match: LabelMatch, strict = false): boolean {
   const carries = (title: string) => !!node.labels?.some((label) => label.title === title);
   if (match === 'all' ? labels.every(carries) : labels.some(carries)) return true;
-  return node.type === 'milestone' && !!node.children?.some((child) => hasLabel(child, labels, match));
+  return !strict && node.type === 'milestone' && !!node.children?.some((child) => hasLabel(child, labels, match));
 }
 
 /** Whether the item belongs to one of the subgroups: a subgroup holds the items of its own
  * subgroups too, MAIN_GROUP the items outside every subgroup. Milestones belong to no group:
- * they match when one of their items does. */
-function inSubgroup(node: GanttTask, subgroups: string[]): boolean {
-  if (node.type === 'milestone') return !!node.children?.some((child) => inSubgroup(child, subgroups));
+ * they match when one of their items does, unless `strict`. */
+function inSubgroup(node: GanttTask, subgroups: string[], strict = false): boolean {
+  if (node.type === 'milestone') return !strict && !!node.children?.some((child) => inSubgroup(child, subgroups));
   const own = node.subgroup;
   return subgroups.some((path) => (path === MAIN_GROUP ? !own : !!own && (own === path || own.startsWith(`${path}/`))));
 }
 
 /** Whether the item's own health status is one of these. Milestones have none: they match
- * when one of their open items does. */
-function hasHealth(node: GanttTask, health: HealthStatus[]): boolean {
+ * when one of their open items does, unless `strict`. */
+function hasHealth(node: GanttTask, health: HealthStatus[], strict = false): boolean {
   if (node.type !== 'milestone') return !!node.health && health.includes(node.health);
+  if (strict) return false;
   const openMatch = (list?: GanttTask[]): boolean =>
     !!list?.some((child) => (!child.closed && hasHealth(child, health)) || openMatch(child.children));
   return openMatch(node.children);
@@ -105,13 +117,14 @@ export const HEALTH_OPTIONS: FilterOption[] = (['atRisk', 'needsAttention', 'onT
   color: `var(--health-${status === 'atRisk' ? 'at-risk' : status === 'needsAttention' ? 'needs-attention' : 'on-track'})`,
 }));
 
-/** The items to show. Without filters, the tree itself. Otherwise a flat list of the matching
- * milestones, then epics, then issues, each shown once with its whole content: milestones
- * and epics through their top-level row (the tree has one per epic), issues through a
- * `_top` copy of their first occurrence. The attention flags need the `attentionIndex` of
- * the tree. */
+/** The items to show. Without filters, the tree itself. Otherwise, in the list layout, a flat
+ * list of the matching milestones, then epics, then issues, each shown once with its whole
+ * content: milestones and epics through their top-level row (the tree has one per epic), issues
+ * through a `_top` copy of their first occurrence. In the tree layout, the tree cut down to the
+ * matching items (see pruneTree). The attention flags need the `attentionIndex` of the tree. */
 export function applyFilters(tree: GanttTask[], filters: Filters, attention?: AttentionIndex): GanttTask[] {
   if (!isFiltering(filters)) return tree;
+  const strict = filters.layout === 'tree';
   const search = normalizeText(filters.search.trim());
   const flagged = (node: GanttTask) => {
     const id = canonicalId(node.id);
@@ -119,12 +132,13 @@ export function applyFilters(tree: GanttTask[], filters: Filters, attention?: At
   };
   const matches = (node: GanttTask) =>
     filters.types.includes(node.type) &&
-    (filters.labels.length === 0 || hasLabel(node, filters.labels, filters.labelMatch)) &&
-    (filters.subgroups.length === 0 || inSubgroup(node, filters.subgroups)) &&
-    (filters.health.length === 0 || hasHealth(node, filters.health)) &&
+    (filters.labels.length === 0 || hasLabel(node, filters.labels, filters.labelMatch, strict)) &&
+    (filters.subgroups.length === 0 || inSubgroup(node, filters.subgroups, strict)) &&
+    (filters.health.length === 0 || hasHealth(node, filters.health, strict)) &&
     (filters.attention.length === 0 || flagged(node)) &&
     (!filters.blocked || !!node.blockedBy?.some((ref) => !ref.closed)) &&
     (!search || normalizeText(node.name).includes(search));
+  if (strict) return pruneTree(tree, matches);
 
   const issues: GanttTask[] = [];
   const seenIssues = new Set<string>();
@@ -143,6 +157,25 @@ export function applyFilters(tree: GanttTask[], filters: Filters, attention?: At
     ...tree.filter((node) => node.type === 'epic' && matches(node)),
     ...issues.filter(matches).map((issue) => withSuffix(issue, TOP_COPY_SUFFIX)),
   ];
+}
+
+/** The tree cut down to the matching items: a node stays when it matches or when one of its
+ * descendants does — an item that doesn't match and holds no match goes, with its subtree. A
+ * matching item keeps only its matching descendants. A node kept only for its place is a copy
+ * flagged `filterContext`. IDs are unchanged (copies keep their `_ms_` / `_root_` suffixes). */
+function pruneTree(list: GanttTask[], matches: (node: GanttTask) => boolean): GanttTask[] {
+  const kept: GanttTask[] = [];
+  for (const node of list) {
+    const children = node.children ? pruneTree(node.children, matches) : [];
+    const own = matches(node);
+    if (!own && children.length === 0) continue;
+    kept.push({
+      ...node,
+      children: children.length > 0 ? children : undefined,
+      filterContext: own ? undefined : true,
+    });
+  }
+  return kept;
 }
 
 export interface FilterOption {

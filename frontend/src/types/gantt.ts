@@ -53,4 +53,7 @@ export interface GanttTask {
   blockedBy?: DependencyRef[]; // GitLab "blocked by" links (work items only)
   blocking?: DependencyRef[];  // GitLab "blocks" links
   children?: GanttTask[];  // Recursive children
+  // Frontend only (never sent by the backend): kept by the tree layout of the filters for its
+  // place, without matching them (see pruneTree in utils/filters.ts).
+  filterContext?: boolean;
 }

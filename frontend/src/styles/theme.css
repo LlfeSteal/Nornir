@@ -453,6 +453,13 @@ button { font: inherit; color: inherit; }
 [data-critical-path] .task-list-row[data-critical] .task-list-name { color: var(--text); font-weight: 600; }
 .gantt-tooltip .critical-note { font-weight: 600; }
 
+/* Tree layout of the filters: ancestors kept for their place, dimmed like the dependencies
+   dialog's rows off the critical path */
+.bar[data-filter-context] { opacity: 0.35; transition: opacity 0.2s var(--ease); }
+.bar[data-filter-context]:hover { opacity: 1; }
+.task-list-row[data-filter-context] .task-list-name { color: var(--text-secondary); }
+.gantt-tooltip .context-note { color: var(--text-secondary); }
+
 /* Dependencies dialog: a modal sheet */
 .dependency-dialog {
   width: min(1100px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px);

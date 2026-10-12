@@ -10,7 +10,7 @@ import { GanttTask, Label, Subgroup } from './types/gantt';
 import { useAppearance } from './utils/appearance';
 import { ViewMode } from './utils/timeline';
 import { withoutClosed } from './utils/flatten';
-import { DEFAULT_FILTERS, Filters, applyFilters, labelOptions, subgroupOptions } from './utils/filters';
+import { Filters, applyFilters, clearedFilters, isFiltering, labelOptions, subgroupOptions } from './utils/filters';
 import { attentionIndex } from './utils/attention';
 import { readPortfolios, usePortfolios } from './utils/portfolios';
 import { decodeView, encodeView, viewKey } from './utils/urlState';
@@ -144,7 +144,7 @@ export const App: React.FC = () => {
   const currentKey = viewKey({ preset, offset: periodOffset, viewMode, filters });
   const applyView = (stored: string | undefined) => {
     if (stored === undefined) {
-      setFilters(DEFAULT_FILTERS);
+      setFilters(clearedFilters);
       return;
     }
     const view = decodeView(stored);
@@ -242,7 +242,7 @@ export const App: React.FC = () => {
             title="No matching items"
             message="No item matches these filters."
             action={
-              <button type="button" className="button" onClick={() => setFilters(DEFAULT_FILTERS)}>
+              <button type="button" className="button" onClick={() => setFilters(clearedFilters)}>
                 Clear filters
               </button>
             }
@@ -252,7 +252,13 @@ export const App: React.FC = () => {
             expanded rows survive until the filters are cleared. */}
         {hasOpenItems && filtered && (
           <DependencyContext.Provider value={dependencyContext}>
-            <GanttChart ref={chart} data={filtered} viewMode={viewMode} range={range} />
+            <GanttChart
+              ref={chart}
+              data={filtered}
+              viewMode={viewMode}
+              range={range}
+              openAll={deferredFilters.layout === 'tree' && isFiltering(deferredFilters)}
+            />
           </DependencyContext.Provider>
         )}
       </main>

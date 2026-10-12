@@ -1,7 +1,7 @@
 import React, { forwardRef, memo, useCallback, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GanttTask } from '../types/gantt';
-import { Row, visibleRows } from '../utils/flatten';
-import { TaskListHeader, TaskListRow, TooltipContent, rowSchedule } from './TaskList';
+import { groupIds, Row, visibleRows } from '../utils/flatten';
+import { isGroupRow, TaskListHeader, TaskListRow, TooltipContent, rowSchedule } from './TaskList';
 import {
   COLUMN_WIDTHS,
   Timeline,
@@ -33,6 +33,8 @@ interface Props {
   dependencies?: { rows: Row[]; links: DependencyLink[]; critical: number };
   /** Fixed room for the chart (the dialog), instead of the room left in the page. */
   height?: number;
+  /** Every group starts expanded (the tree layout of the filters: it opens down to the matches). */
+  openAll?: boolean;
 }
 
 export interface GanttChartHandle {
@@ -61,16 +63,25 @@ interface Hover {
   bottom: number;
 }
 
-export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode, range, dependencies, height }, ref) {
+export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChart({ data, viewMode, range, dependencies, height, openAll }, ref) {
   // Groups are collapsed unless expanded by the user: everything starts collapsed,
-  // including groups that appear after a refresh.
+  // including groups that appear after a refresh (except with openAll, below).
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  // With openAll, the groups the user collapsed instead. A set of its own, so the expanded rows
+  // of the other mode are found again on the way back.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [wasOpenAll, setWasOpenAll] = useState(openAll);
+  if (openAll !== wasOpenAll) {
+    setWasOpenAll(openAll);
+    setCollapsed(new Set());
+  }
+  const shownExpanded = useMemo(() => (openAll ? groupIds(data, collapsed) : expanded), [openAll, data, collapsed, expanded]);
   const chartRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ top: 0, left: 0, width: window.innerWidth, height: window.innerHeight });
   const [hover, setHover] = useState<Hover | null>(null);
 
-  const rows = useMemo(() => dependencies?.rows ?? visibleRows(data, expanded), [dependencies, data, expanded]);
+  const rows = useMemo(() => dependencies?.rows ?? visibleRows(data, shownExpanded), [dependencies, data, shownExpanded]);
   const hasRows = rows.length > 0;
 
   // The timeline spans the period, or else every item (collapsed ones included, so that
@@ -171,13 +182,16 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
     return () => observer.disconnect();
   }, [hasRows, height]);
 
-  const toggle = useCallback((id: string) => {
-    setExpanded((previous) => {
-      const next = new Set(previous);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
-  }, []);
+  const toggle = useCallback(
+    (id: string) => {
+      (openAll ? setCollapsed : setExpanded)((previous) => {
+        const next = new Set(previous);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      });
+    },
+    [openAll],
+  );
   const showTooltip = useCallback((row: Row, event: React.MouseEvent<HTMLElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     setHover({ row, x: event.clientX, top: box.top, bottom: box.bottom });
@@ -216,7 +230,7 @@ export const GanttChart = forwardRef<GanttChartHandle, Props>(function GanttChar
                 key={row.node.id}
                 row={row}
                 index={firstRow + i}
-                expanded={expanded.has(row.node.id)}
+                expanded={shownExpanded.has(row.node.id)}
                 timeline={timeline}
                 range={range}
                 onToggle={toggle}
@@ -326,7 +340,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
   const bar = clipBar(node, range);
   const left = timeline.x(bar.start);
   const width = Math.max(2, timeline.x(bar.end) - left);
-  const isGroup = node.type === 'milestone' || row.hasChildren;
+  const isGroup = isGroupRow(row);
   const schedule = rowSchedule(row);
   const health = rowHealth(node);
   const labelInside = node.name.length * LABEL_CHAR_WIDTH + 16 < width;
@@ -353,6 +367,7 @@ function Bar({ row, timeline, range, onHover, onLeave }: Pick<ChartRowProps, 'ro
       data-critical={row.dependency?.critical ? 'true' : undefined}
       data-linked={row.dependency?.linked ? 'true' : undefined}
       data-external={row.dependency?.external ? 'true' : undefined}
+      data-filter-context={node.filterContext ? 'true' : undefined}
       style={{ left, width }}
       onMouseEnter={(event) => onHover(row, event)}
       onMouseLeave={onLeave}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { attentionIndex } from './attention';
-import { applyFilters, canonicalId, DEFAULT_FILTERS, Filters, isFiltering, MAIN_GROUP, normalizeText, subgroupOptions } from './filters';
+import { applyFilters, canonicalId, clearedFilters, DEFAULT_FILTERS, Filters, isFiltering, MAIN_GROUP, normalizeText, subgroupOptions } from './filters';
+import { GanttTask } from '../types/gantt';
 import { task } from './testing';
 
 // Shaped like the backend output: a milestone holding the `_ms_` copy of an issue, an epic
@@ -181,5 +182,58 @@ describe('label match', () => {
     expect(isFiltering({ ...DEFAULT_FILTERS, labelMatch: 'all' })).toBe(false);
     expect(ids({ labels: ['bug', 'ui'], labelMatch: 'all' })).toEqual(['I3_top']);
     expect(ids({ labels: ['bug'], labelMatch: 'all', types: ['issue'], search: 'crash' })).toEqual(['I1_ms_I1_top', 'I3_top']);
+  });
+});
+
+/** The tree layout's result, one line per node, indented by depth; "(context)" when kept only
+ * for its place. */
+const outline = (fields: Partial<Filters>) => {
+  const lines: string[] = [];
+  const walk = (nodes: GanttTask[], depth: number) =>
+    nodes.forEach((node) => {
+      lines.push(`${'  '.repeat(depth)}${node.id}${node.filterContext ? ' (context)' : ''}`);
+      if (node.children) walk(node.children, depth + 1);
+    });
+  walk(applyFilters(tree, { ...DEFAULT_FILTERS, ...fields, layout: 'tree' }), 0);
+  return lines;
+};
+
+describe('applyFilters, tree layout', () => {
+  it('drops an item that does not match and holds no match, keeps the parents of a match as context', () => {
+    expect(outline({ labels: ['backend'] })).toEqual(['E1 (context)', '  I2']);
+  });
+
+  it('keeps only the matching children of a matching item', () => {
+    expect(outline({ labels: ['team-a'] })).toEqual(['E1']);
+    expect(outline({ types: ['epic'] })).toEqual(['E1', '  E2', 'E2_root_E2']);
+  });
+
+  it('shows every placement of a match, IDs unchanged', () => {
+    expect(outline({ search: 'webhooks' })).toEqual(['M1 (context)', '  I1_ms_I1', 'E1 (context)', '  I1']);
+    expect(outline({ types: ['issue'] })).toEqual([
+      'M1 (context)',
+      '  I1_ms_I1',
+      'E1 (context)',
+      '  I1',
+      '  I2',
+      '  I3',
+      '  E2 (context)',
+      '    I4',
+      'E2_root_E2 (context)',
+      '  I4_root_E2',
+    ]);
+  });
+
+  it('matches milestones on their own properties only: the items show under them', () => {
+    expect(filter({ health: ['needsAttention'] })).toContain('M1');
+    expect(outline({ health: ['needsAttention'] })).toEqual(['M1 (context)', '  I1_ms_I1', 'E1 (context)', '  I1']);
+    expect(outline({ types: ['milestone'] })).toEqual(['M1']);
+  });
+
+  it('returns the tree itself without filters, and clearing keeps the layout', () => {
+    const treeLayout = { ...DEFAULT_FILTERS, layout: 'tree' as const };
+    expect(isFiltering(treeLayout)).toBe(false);
+    expect(applyFilters(tree, treeLayout)).toBe(tree);
+    expect(clearedFilters({ ...treeLayout, search: 'x', blocked: true })).toEqual(treeLayout);
   });
 });
