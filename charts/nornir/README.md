@@ -108,6 +108,7 @@ The bundle is mounted read-only in `/etc/nornir/ca` and `SSL_CERT_DIR` is set to
 | `backend.podAnnotations` / `.podLabels` | `{}` | |
 | `backend.nodeSelector` / `.tolerations` / `.affinity` | | Scheduling |
 | `frontend.*` | | Same keys as `backend`; image `nornir-frontend`, Service port `80`, probes `GET /` |
+| `frontend.service.nodePort` | `""` | With `frontend.service.type` `NodePort` / `LoadBalancer`: a fixed node port (e.g. `30081`); empty → assigned by Kubernetes |
 | `imagePullSecrets` | `[]` | Secrets to pull the images from a private registry |
 | `nameOverride` / `fullnameOverride` | `""` | Resource names |
 | `serviceAccount.create` / `.name` / `.annotations` | `true` / `""` / `{}` | Service account of the pods (its API token is never mounted) |

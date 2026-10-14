@@ -75,6 +75,8 @@ frontend:
   service:
     type: ClusterIP
     port: 80
+    # With type NodePort / LoadBalancer: a fixed node port (e.g. 30081); "" → assigned by Kubernetes.
+    nodePort: ""
   # Extra environment variables (list of EnvVar).
   extraEnv: []
   resources: {}

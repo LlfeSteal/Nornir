@@ -193,6 +193,14 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 65535
+            },
+            "nodePort": {
+              "type": [
+                "integer",
+                "string"
+              ],
+              "pattern": "^([0-9]+)?$",
+              "description": "Fixed node port (NodePort / LoadBalancer), e.g. 30081; empty → assigned by Kubernetes"
             }
           }
         },

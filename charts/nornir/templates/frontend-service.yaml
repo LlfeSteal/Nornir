@@ -12,5 +12,8 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+      {{- if and (has .Values.frontend.service.type (list "NodePort" "LoadBalancer")) .Values.frontend.service.nodePort }}
+      nodePort: {{ .Values.frontend.service.nodePort }}
+      {{- end }}
   selector:
     {{- include "nornir.selectorLabels" (list . "frontend") | nindent 4 }}
